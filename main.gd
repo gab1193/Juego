@@ -1,7 +1,7 @@
 extends Node2D
 
 # --- 1. REFERENCIAS DE INTERFAZ GENERAL ---
-
+@onready var grafico_arquetipo = $CapaUI/PanelInfoStats/GraficoArquetipo # <--- AGREGA ESTA LÍNEA
 @onready var label_dia = $CapaUI/PanelStats/VBoxContainer/LabelDia
 @onready var label_dinero = $CapaUI/PanelStats/VBoxContainer/LabelDinero
 @onready var label_energia = $CapaUI/PanelStats/VBoxContainer/LabelEnergia
@@ -29,7 +29,7 @@ extends Node2D
 @onready var panel_app_agenda = $CapaUI/PanelSimPhone/PanelAppAgenda
 @onready var grid_calendario = $CapaUI/PanelSimPhone/PanelAppAgenda/VBoxContainer/GridCalendario
 @onready var panel_app_castings = $CapaUI/PanelSimPhone/PanelAppCastings
-@onready var contenedor_lista_castings = $CapaUI/PanelSimPhone/PanelAppCastings/VBoxContainer/ContenedorListaCastings
+@onready var contenedor_lista_castings = $CapaUI/PanelSimPhone/PanelAppCastings/VBoxContainer/ScrollContainer/ContenedorListaCastings
 @onready var panel_confirmacion = $CapaUI/PanelSimPhone/PanelAppCastings/PanelConfirmacion
 @onready var label_detalles_casting = $CapaUI/PanelSimPhone/PanelAppCastings/PanelConfirmacion/VBoxContainer/LabelDetallesCasting
 @onready var grid_calendario_confirmacion = $CapaUI/PanelSimPhone/PanelAppCastings/PanelConfirmacion/VBoxContainer/GridCalendarioConfirmacion
@@ -64,6 +64,7 @@ var exigencia_director = 0
 var cartas_jugadas_turno = 0
 var max_cartas_jugables = 2
 var cartas_jugadas_ids = [] # <--- NUEVO: Guarda el ID para buscar combos
+
 # --- REFERENCIAS CONTACTOS Y BOOK ---
 @onready var panel_app_contactos = $CapaUI/PanelSimPhone/PanelAppContactos
 @onready var contenedor_lista_contactos = $CapaUI/PanelSimPhone/PanelAppContactos/VBoxContainer/ContenedorListaContactos
@@ -140,6 +141,16 @@ var lineas_guion = [
 
 # --- 2. INICIO DEL JUEGO ---
 func _ready():
+	# --- SISTEMA DE CARGA AUTOMÁTICA ---
+	var carga_exitosa = Datos.cargar_partida()
+	
+	if carga_exitosa:
+		print("El jugador continuó su carrera.")
+	else:
+		print("Nueva partida iniciada.")
+		
+	actualizar_interfaz() # Refrescamos la UI con los datos cargados
+	# -----------------------------------
 	panel_app_academia.visible = false
 	panel_balasim.visible = false
 	panel_app_mazo.visible = false
@@ -166,7 +177,9 @@ func _ready():
 	recalcular_stats_pasivos()
 	actualizar_interfaz()
 	dibujar_feed_redes()
-
+# Llenamos el mazo disponible si el juego acaba de abrir
+	if Datos.mazo_disponible.is_empty() and not Datos.mazo_jugador.is_empty():
+		Datos.mazo_disponible = Datos.mazo_jugador.duplicate()
 func _process(delta):
 	if rutina_activa:
 		cursor_barra.position.x += cursor_velocidad * cursor_direccion * delta
@@ -265,12 +278,10 @@ func actualizar_interfaz():
 			var proy = Datos.proyectos_activos[id_proy]
 			var nombre = proy["titulo_unico"].split("\n")[1]
 			
-			# Calculamos el % de preparación
 			var max_rend = float((proy["dias_de_trabajo"] - 1) + 2)
 			var actual = float(proy["rendimiento_acumulado"])
 			var porcentaje = clamp((actual / max_rend) * 100.0, 0.0, 100.0)
 			
-			# Calculamos las estrellas estimadas actuales
 			var estrellas_est = clamp(int((actual / max_rend) * 5), 1, 5)
 			var txt_est = ""
 			for e in range(estrellas_est): txt_est += "⭐"
@@ -282,10 +293,20 @@ func actualizar_interfaz():
 		label_proyectos.visible = true
 		
 		# Modificamos el botón de ensayar
-		btn_ensayar.text = "Repasar Guiones (-1 E)"
+		if Datos.mazo_jugador.is_empty():
+			btn_ensayar.text = "Repasar Guiones 🔒 (Cero Cartas)"
+			btn_ensayar.disabled = true
+		else:
+			btn_ensayar.text = "Repasar Guiones (-1 E)"
+			btn_ensayar.disabled = false
 	else:
 		label_proyectos.visible = false
-		btn_ensayar.text = "Ensayar Monólogo Libre (-1 E)"
+		if Datos.mazo_jugador.is_empty():
+			btn_ensayar.text = "Ensayo Libre 🔒 (Cero Cartas)"
+			btn_ensayar.disabled = true
+		else:
+			btn_ensayar.text = "Ensayar Monólogo Libre (-1 E)"
+			btn_ensayar.disabled = false
 		
 	if ha_publicado_hoy:
 		btn_publicar_post.text = "Reel (Hecho hoy) 🔒"
@@ -341,7 +362,11 @@ func _on_btn_aceptar_evento_pressed():
 	panel_evento_matutino.visible = false
 	actualizar_interfaz()
 
-func _on_btn_info_stats_pressed(): panel_info_stats.visible = true
+func _on_btn_info_stats_pressed(): 
+	panel_info_stats.visible = true
+	# Hacemos que la araña se actualice cada que abres la app
+	if is_instance_valid(grafico_arquetipo):
+		grafico_arquetipo.actualizar_grafico()
 func _on_btn_cerrar_info_pressed(): panel_info_stats.visible = false
 
 # --- 4. MECÁNICAS DE RUTINA ---
@@ -354,46 +379,149 @@ func iniciar_skill_check(tipo):
 		tipo_rutina = tipo
 		panel_balasim.visible = true
 		
-		# --- 1. CONFIGURACIÓN DE BATALLA Y RONDAS ---
-		poder_total_encuentro = Datos.habilidades_actor["carisma"] * 2 
-		rondas_restantes = 3 # Base de 3 rondas
-		if tipo == "trabajo": rondas_restantes = 2
-		elif tipo == "funcion": rondas_restantes = 4
-		
+		# --- 1. JEFES CONTEXTUALES Y EXIGENCIA DINÁMICA ---
 		var nombre_jefe = "Director General"
+		var base_exigencia = 10
+		rondas_restantes = 3 
+		
 		if tipo == "trabajo":
 			nombre_jefe = "Mesa 4: Cliente Problemático"
-			exigencia_director = randi_range(6, 12) 
+			exigencia_director = randi_range(6, 12)
+			rondas_restantes = 2
 		elif tipo == "ensayo_casa":
-			nombre_jefe = "El Espejo: Tu Propia Inseguridad"
-			exigencia_director = randi_range(15, 25) 
+			nombre_jefe = "Tu Propia Inseguridad"
+			exigencia_director = randi_range(12, 20)
 		elif tipo == "casting_real":
 			var nivel_req = casting_data_actual.get("nivel_minimo", 1)
-			nombre_jefe = "Director de Casting: " + casting_data_actual.get("empresa", "Productora")
-			exigencia_director = (nivel_req * 15) + randi_range(10, 20)
+			nombre_jefe = "Casting: " + casting_data_actual.get("empresa", "Productora")
+			exigencia_director = (nivel_req * 12) + randi_range(10, 20)
 		elif tipo == "ensayo_cast" or tipo == "funcion":
 			var nivel_req = casting_data_actual.get("nivel_minimo", 1)
-			exigencia_director = (nivel_req * 25) + randi_range(20, 40)
-			if tipo == "funcion": exigencia_director = int(exigencia_director * 2.5)
+			var arq = casting_data_actual.get("arquetipo", "comercial")
+			var es_funcion = (tipo == "funcion")
+			
+			# ¡DIFICULTAD BALANCEADA! (Para que no pidan 114 en nivel 1)
+			if nivel_req == 1: base_exigencia = randi_range(15, 25)
+			elif nivel_req == 2: base_exigencia = randi_range(35, 50)
+			elif nivel_req >= 3: base_exigencia = randi_range(70, 95)
+			
+			if es_funcion: 
+				base_exigencia = int(base_exigencia * 1.5) # Escalado más justo
+				rondas_restantes = 4
+			exigencia_director = base_exigencia
+			# (El resto de nombres de jefes por arquetipo déjalos igual...)
+		elif tipo == "ensayo_cast" or tipo == "funcion":
+			var nivel_req = casting_data_actual.get("nivel_minimo", 1)
+			var arq = casting_data_actual.get("arquetipo", "comercial")
+			var es_funcion = (tipo == "funcion")
+			
+			if nivel_req == 1: base_exigencia = randi_range(15, 25)
+			elif nivel_req == 2: base_exigencia = randi_range(40, 60)
+			elif nivel_req >= 3: base_exigencia = randi_range(100, 150)
+			
+			if es_funcion: 
+				base_exigencia = int(base_exigencia * 2.5)
+				rondas_restantes = 4
+			
+			exigencia_director = base_exigencia
+			
+			if arq == "fisico":
+				if nivel_req == 1: nombre_jefe = "Niños de Fiesta Salvajes"
+				elif nivel_req == 2: nombre_jefe = "Coreógrafo Estricto"
+				else: nombre_jefe = "Director de Dobles de Acción de Hollywood"
+			elif arq == "comercial":
+				if nivel_req == 1: nombre_jefe = "Productor de Anuncios Locales"
+				else: nombre_jefe = "Mesa de Ejecutivos de la Marca"
+			elif arq == "metodo":
+				if nivel_req == 1: nombre_jefe = "Director de Corto Universitario"
+				elif nivel_req == 2: nombre_jefe = "Crítico de Teatro Local"
+				else: nombre_jefe = "Cineasta de Culto Europeo"
+			elif arq == "forma":
+				if nivel_req == 1: nombre_jefe = "Ingeniero de Sonido Gruñón"
+				else: nombre_jefe = "Director de la Royal Shakespeare Company"
+			else:
+				nombre_jefe = "Público Exigente"
 
-		# --- 2. RESET DE SELECCIÓN ---
+		# --- 2. CONFIGURACIÓN DE BATALLA Y UI ---
+		poder_acumulado_turno = Datos.habilidades_actor["carisma"] * 2 
 		seleccion_actual_nodos.clear()
 		seleccion_actual_ids.clear()
 		max_cartas_jugables = 2 + int(Datos.habilidades_actor["expresion_corporal"] / 2) 
 		mulligans_restantes = 1 + int(Datos.habilidades_actor["nivel_general"] / 5)
-		
+		# --- ESCALADO DE MEMORIA (RECURSOS DE BATALLA) ---
+		# Empiezas con 2 Mulligans base. Por cada 10 puntos de Memoria, ganas 1 extra.
+		mulligans_restantes = 2 + int(Datos.habilidades_actor.get("memoria", 1) / 10.0)
 		actualizar_ui_balasim(nombre_jefe)
-		repartir_mano_balasim()
+		repartir_mano_balasim(true)
+		
+		# --- GESTIÓN DEL LOG DE BATALLA ---
+		var vbox_log = null
+		if panel_balasim.has_node("CajaLogBatalla"):
+			# Si ya existe, solo borramos los textos viejos
+			var log_existente = panel_balasim.get_node("CajaLogBatalla")
+			vbox_log = log_existente.find_child("VBoxLog", true, false)
+			for hijo in vbox_log.get_children(): hijo.queue_free()
+		else:
+			# Si no existe, lo creamos desde cero una sola vez
+			var panel_log = PanelContainer.new()
+			panel_log.name = "CajaLogBatalla"
+			panel_log.position = Vector2(10, 10)
+			panel_log.size = Vector2(300, 150)
+			panel_log.mouse_filter = Control.MOUSE_FILTER_IGNORE # Para que no bloquee clicks
 			
+			var scroll = ScrollContainer.new()
+			scroll.name = "ScrollContainer"
+			scroll.size = panel_log.size
+			scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+			
+			vbox_log = VBoxContainer.new()
+			vbox_log.name = "VBoxLog"
+			vbox_log.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			
+			scroll.add_child(vbox_log)
+			panel_log.add_child(scroll)
+			panel_balasim.add_child(panel_log)
+		
+		escribir_log_batalla("🎬 Inicia la prueba contra: " + nombre_jefe)
 	else:
-		mostrar_alerta("¡Exhausto!", "No tienes energía suficiente.")
-
-# Función auxiliar para refrescar la UI de la mesa
+		mostrar_alerta("¡Exhausto!", "No tienes energía suficiente (" + str(costo_energia) + "E necesarias).")
+func escribir_log_batalla(texto):
+	# Buscamos el VBoxLog de forma más segura
+	if not panel_balasim.has_node("CajaLogBatalla"): return
+	var vbox_log = panel_balasim.get_node("CajaLogBatalla").find_child("VBoxLog", true, false)
+	if not vbox_log: return
+	
+	var lbl = Label.new()
+	lbl.text = "> " + texto
+	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+	lbl.add_theme_font_size_override("font_size", 12)
+	vbox_log.add_child(lbl)
+	
+	# Buscamos el ScrollContainer para bajar la barrita
+	var scroll = panel_balasim.get_node("CajaLogBatalla").find_child("ScrollContainer", true, false)
+	
+	# Auto-bajar el scroll con SEGURIDAD
+	if is_instance_valid(scroll):
+		await get_tree().process_frame
+		# Aquí está el truco: verificamos OTRA VEZ después del await
+		if is_instance_valid(scroll) and not scroll.is_queued_for_deletion():
+			scroll.scroll_vertical = int(scroll.get_v_scroll_bar().max_value)
 func actualizar_ui_balasim(nombre_jefe):
-	label_jefe.text = "⚔️ " + nombre_jefe + "\nExigencia: " + str(poder_total_encuentro) + " / " + str(exigencia_director)
-	label_poder_jugador.text = "Rondas: " + str(rondas_restantes) + " | Seleccionadas: " + str(seleccion_actual_nodos.size()) + "/" + str(max_cartas_jugables)
-	btn_actuar.text = "🎭 ¡ACTUAR! (Ronda actual)"
+	var limite_visual = max_cartas_jugables
+	for id in seleccion_actual_ids:
+		if Datos.catalogo_cartas[id].has("efecto") and Datos.catalogo_cartas[id]["efecto"] == "mas_jugadas":
+			limite_visual += Datos.catalogo_cartas[id]["valor"]
+			
+	# --- NUEVO: PREVISUALIZACIÓN ---
+	var proyeccion = calcular_puntos_proyectados()
+	var texto_proyeccion = ""
+	if proyeccion > 0: texto_proyeccion = " (💥 " + str(proyeccion) + " pts)"
+
+	label_jefe.text = "⚔️ " + nombre_jefe + "\nExigencia: " + str(poder_acumulado_turno) + " / " + str(exigencia_director)
+	label_poder_jugador.text = "Rondas: " + str(rondas_restantes) + " | Seleccionadas: " + str(seleccion_actual_nodos.size()) + "/" + str(limite_visual)
+	btn_actuar.text = "🎭 ¡ACTUAR!" + texto_proyeccion
 	btn_mulligan.text = "🔄 Redibujar (" + str(mulligans_restantes) + " rest.)"
+
 func _on_boton_trabajar_pressed(): 
 	if not ha_trabajado_hoy: iniciar_skill_check("trabajo")
 func _on_boton_ensayar_pressed():
@@ -464,7 +592,125 @@ func resolver_rutina_general(fue_exito):
 		
 		actualizar_interfaz()
 		return # Salimos para que no intente ejecutar lógica de "Trabajo" o "Ensayo"
-	
+	elif tipo_rutina == "funcion":
+		var c = casting_data_actual
+		var nombre_proyecto = c["titulo_unico"].split("\n")[1]
+		var arq_dom = obtener_arquetipo_dominante() 
+
+		# Balasim define el éxito de la crítica
+		var estrellas = 1
+		if fue_exito:
+			c["rendimiento_acumulado"] += 2
+			
+			# ¡NUEVO: RECOMPENSA VARIABLE SEGÚN DESEMPEÑO EN COMBATE!
+			var porcentaje_victoria = float(poder_total_encuentro) / float(exigencia_director)
+			
+			if porcentaje_victoria >= 1.5: 
+				estrellas = 5 # Arrasaste
+				c["recompensa_xp"] = int(c.get("recompensa_xp", 100) * 1.5)
+			elif porcentaje_victoria >= 1.2: 
+				estrellas = 4 # Muy bien
+			else: 
+				estrellas = 3 # Pasaste por los pelos
+		else:
+			estrellas = randi_range(1, 2)
+
+		# --- SUBIDA DE PUNTOS DE ARQUETIPO (ADN) ---
+		if estrellas >= 3:
+			var arq_proyecto = c.get("arquetipo", "comercial")
+			Datos.perfil_actor[arq_proyecto] += (estrellas * 2)
+
+		# --- BUFF: ACTOR DE FORMA (ANTI-SABOTAJE) ---
+		var alerta_sabotaje = ""
+		if c.has("estado_tecnicos"):
+			if c["estado_tecnicos"] == "sabotaje":
+				if arq_dom == "forma":
+					c["estado_tecnicos"] = "normal"
+					alerta_sabotaje = "🛡️ Tu profesionalismo impidió el sabotaje.\n\n"
+				else:
+					estrellas = 1 
+					alerta_sabotaje = "🚨 SABOTAJE: Los técnicos te arruinaron.\n\n"
+			elif c["estado_tecnicos"] == "excelente":
+				estrellas = clamp(estrellas + 1, 1, 5) 
+
+		# --- CÁLCULO DE TAQUILLA Y PAGO ---
+		var ganancia_final = 0; var audiencia_final = 0
+
+		if c.has("tipo_pago") and c["tipo_pago"] == "taquilla":
+			var base_aud = c.get("importancia", 1) * 20
+			var aforo_maximo = 1000 
+			if c.has("es_propia"): 
+				base_aud += (c["influencia_equipo"] * 3) 
+				aforo_maximo = Datos.espacios_disponibles[Datos.mi_compania["id_espacio_actual"]]["capacidad_publico"]
+				
+			audiencia_final = base_aud + int(Datos.stats_actor["seguidores"] * 0.1) + c.get("hype_generado", 0)
+			
+			if c.get("estado_tecnicos") == "sabotaje": audiencia_final = int(audiencia_final * 0.3)
+			elif estrellas <= 2: audiencia_final = int(audiencia_final * 0.5) 
+			
+			if audiencia_final >= aforo_maximo:
+				audiencia_final = aforo_maximo
+				c["hubo_sold_out"] = true 
+			
+			var ganancia_bruta = audiencia_final * c.get("corte_boleto", 5)
+			if c.has("es_propia"): ganancia_final = int(ganancia_bruta * c["porcentaje_ganancia"])
+			else: ganancia_final = ganancia_bruta
+		else:
+			ganancia_final = c.get("paga", 0)
+			if estrellas <= 2: ganancia_final = int(ganancia_final / 2.0) 
+
+		# --- MULTIPLICADORES DE ARQUETIPO ---
+		var multi_dinero = 1.0; var multi_xp = 1.0; var multi_seg = 1.0; var multi_ego = 1
+		
+		if arq_dom == "comercial": multi_dinero = 1.5; multi_ego = 2
+		elif arq_dom == "fisico": multi_dinero = 0.8
+		if arq_dom == "metodo": multi_xp = 1.5; Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] + 15, 0, 100)
+		elif arq_dom == "instinto": multi_xp = 0.5
+		if arq_dom == "forma": multi_seg = 0.5
+
+		ganancia_final = int(ganancia_final * multi_dinero)
+		var xp_final = int(c["recompensa_xp"] * multi_xp)
+		var seg_final = int(c["recompensa_seguidores"] * multi_seg)
+
+		Datos.economia["dinero"] += ganancia_final
+		sumar_seguidores(seg_final)
+		Datos.habilidades_actor["xp_actual"] += xp_final
+
+		# --- GUARDAR EN BOOK ---
+		var registro_book = {"titulo": nombre_proyecto, "papel": c.get("papel", "Actor"), "estrellas": estrellas, "ganancia": ganancia_final}
+		if audiencia_final > 0: registro_book["audiencia"] = audiencia_final
+		Datos.historial_proyectos.push_front(registro_book)
+
+		# --- CONSECUENCIAS VISUALES Y REDES ---
+		if c.get("estado_tecnicos") == "sabotaje":
+			Datos.stats_actor["ego"] = clamp(Datos.stats_actor["ego"] - (15 * multi_ego), 0, 100) 
+			mostrar_alerta("🍅 Humillación Técnica", alerta_sabotaje + "Crítica: " + str(estrellas) + "⭐\nGanancias: $" + str(ganancia_final))
+			publicar_auto("Peor día de mi vida. Nunca hagan enojar a los técnicos de iluminación. 😭")
+		elif estrellas >= 4:
+			var titulo_alerta = "🏆 Gran Estreno"
+			var txt = alerta_sabotaje + "¡Un éxito rotundo!\nCrítica: " + str(estrellas) + "⭐\n"
+			if c.has("hubo_sold_out"):
+				Datos.stats_actor["ego"] = clamp(Datos.stats_actor["ego"] + (20 * multi_ego), 0, 100) 
+				titulo_alerta = "🔥 ¡SOLD OUT ABSOLUTO! 🔥"
+				txt += "Taquilla: " + str(audiencia_final) + " (¡LLENO TOTAL!)\n"
+				publicar_auto("¡HICIMOS SOLD OUT! No cabía un alfiler para ver '" + nombre_proyecto + "'. 😭🎫")
+			elif audiencia_final > 0: 
+				Datos.stats_actor["ego"] = clamp(Datos.stats_actor["ego"] + (5 * multi_ego), 0, 100) 
+				txt += "Taquilla: " + str(audiencia_final) + " personas\n"
+				publicar_auto("Las críticas a '" + nombre_proyecto + "' son hermosas. ⭐⭐⭐⭐⭐")
+			else:
+				Datos.stats_actor["ego"] = clamp(Datos.stats_actor["ego"] + (2 * multi_ego), 0, 100)
+			mostrar_alerta(titulo_alerta, txt + "Ganancias: $" + str(ganancia_final))
+		else:
+			Datos.stats_actor["ego"] = clamp(Datos.stats_actor["ego"] - (5 * multi_ego), 0, 100) 
+			var fans_perdidos = c.get("importancia", 1) * 15 * (3 - estrellas)
+			reducir_seguidores(fans_perdidos)
+			mostrar_alerta("🍅 Fracaso en Crítica", "Un desastre absoluto.\n\nCrítica: " + str(estrellas) + "⭐\nGanancias: $" + str(ganancia_final) + "\nFans Perdidos: -" + str(fans_perdidos))
+			publicar_auto("A veces las cosas no salen como uno quiere. Pasemos la página. 💔")
+
+		Datos.proyectos_activos.erase(c["id_unico"]); Datos.agenda.erase(Datos.tiempo["dia"])
+		comprobar_hitos_redes(); comprobar_level_up(); actualizar_interfaz()
+		return # Evita que se ejecute otro código de abajo
 	if tipo_rutina == "trabajo":
 		ha_trabajado_hoy = true
 		Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] + 15, 0, 100) # +15 Estrés
@@ -559,8 +805,9 @@ func _on_btn_llamado_pressed():
 		var id_unico = evento_hoy.replace("Grabacion_", "")
 		casting_data_actual = Datos.proyectos_activos[id_unico]
 		
+		# Si la obra es tuya, pagas técnicos. Si no, vas directo a la batalla final.
 		if casting_data_actual.has("es_propia"): panel_tecnicos.visible = true
-		else: iniciar_minijuego_memoria(id_unico)
+		else: iniciar_skill_check("funcion")
 	elif evento_hoy.begins_with("Grabacion_"):
 		var id_unico = evento_hoy.replace("Grabacion_", "")
 		casting_data_actual = Datos.proyectos_activos[id_unico]
@@ -588,6 +835,13 @@ func _on_boton_dormir_pressed():
 	cafes_tomados_hoy = 0 # El sueño resetea tu tolerancia a la cafeína
 	Datos.estado_actual = "normal"
 	Datos.tiempo["dia"] += 1
+	# --- REINICIO SEMANAL DE CARTAS ---
+	if Datos.tiempo["dia"] % 7 == 1: # Si es día 8, 15, 22, 29...
+		Datos.mazo_disponible = Datos.mazo_jugador.duplicate()
+		mostrar_alerta("🗓️ Inicio de Semana", "¡Has descansado y recuperado la inspiración!\nTodas las cartas que usaste la semana pasada han vuelto a tu Mazo Disponible.")
+	# La energía máxima ya no es fija, escala con tu estadística de Cuerpo
+	var bono_cuerpo = Datos.habilidades_actor.get("cuerpo", 1)
+	Datos.stats_actor["energia_maxima"] = 100 + int(bono_cuerpo * 2)
 	Datos.stats_actor["energia_actual"] = Datos.stats_actor["energia_maxima"]
 	Datos.economia["dinero"] -= 15 
 	
@@ -604,7 +858,7 @@ func _on_boton_dormir_pressed():
 		Datos.economia["dinero"] += ingresos_redes
 	
 	generar_castings_del_dia()
-	
+	generar_mercado_diario()
 	var dia_nuevo = Datos.tiempo["dia"]
 	if Datos.agenda.has(Datos.tiempo["dia"]) and Datos.agenda[Datos.tiempo["dia"]] == "Pago_Renta":
 		# ¡NUEVA LÓGICA DE RENTA DOBLE!
@@ -660,7 +914,9 @@ func _on_boton_dormir_pressed():
 			elif ingresos_redes > 0: mostrar_alerta("💸 Monetización SimGram", "Ganaste: +$" + str(ingresos_redes))
 	
 	actualizar_interfaz()
-
+# --- AUTO-GUARDADO AL FINALIZAR EL DÍA ---
+	Datos.guardar_partida()
+	mostrar_alerta("💤 Día Finalizado", "Has descansado. Tu progreso ha sido guardado automáticamente.")
 func comprobar_level_up():
 	var subio_nivel = false
 	while Datos.habilidades_actor["xp_actual"] >= Datos.habilidades_actor["xp_requerida"]:
@@ -744,18 +1000,28 @@ func _on_btn_app_castings_pressed():
 	contenedor_menu_inicio.visible = false
 	panel_app_castings.visible = true
 	for hijo in contenedor_lista_castings.get_children(): hijo.queue_free()
+	
 	for index in range(castings_de_hoy.size()):
 		var casting = castings_de_hoy[index]
 		var btn_trabajo = Button.new()
+		
 		var texto_boton = casting["titulo_unico"] + "\n"
 		texto_boton += "🎭 Papel: " + casting.get("papel", "Actor") + "\n" 
-		texto_boton += "Pide: Nvl " + str(casting["nivel_minimo"]) + " " + casting["stat_requerido"].capitalize() + " | " + str(casting["seguidores_minimos"]) + " Seg.\n"
-		texto_boton += "🎁 Recompensas: +" + str(casting.get("recompensa_xp", 0)) + " XP | +" + str(casting.get("recompensa_seguidores", 0)) + " Fans\n"
+		texto_boton += "Pide: Nvl " + str(casting["nivel_minimo"]) + " | " + str(casting["seguidores_minimos"]) + " Seg.\n"
 		
-		if casting.has("tipo_pago") and casting["tipo_pago"] == "taquilla":
-			texto_boton += "💸 Pago: % de Taquilla Final\n"
-		else:
-			texto_boton += "💰 Pago Fijo: $" + str(casting.get("paga", 0)) + "\n"
+		var arq = casting.get("arquetipo", "comercial")
+		var fuerte = ""; var debil = ""
+		if arq == "metodo": fuerte = "Instinto"; debil = "Comercial"
+		elif arq == "comercial": fuerte = "Método"; debil = "Físico"
+		elif arq == "fisico": fuerte = "Comercial"; debil = "Forma"
+		elif arq == "forma": fuerte = "Físico"; debil = "Instinto"
+		elif arq == "instinto": fuerte = "Forma"; debil = "Método"
+		texto_boton += "🧠 Jefe: " + arq.capitalize() + " (Usa " + fuerte + " | Evita " + debil + ")\n"
+		
+		texto_boton += "🎁 Recompensas Base: +" + str(casting.get("recompensa_xp", 0)) + " XP\n"
+		
+		if casting.has("tipo_pago") and casting["tipo_pago"] == "taquilla": texto_boton += "💸 Pago: % Taquilla\n"
+		else: texto_boton += "💰 Pago Fijo: $" + str(casting.get("paga", 0)) + "\n"
 			
 		if casting["dias_de_trabajo"] > 1: 
 			texto_boton += "Ensayos: " + str(casting["dias_de_trabajo"] - 1) + " | Función: 1"
@@ -763,6 +1029,10 @@ func _on_btn_app_castings_pressed():
 			texto_boton += "Función: 1"
 		
 		btn_trabajo.text = texto_boton
+		
+		# --- 🪄 AQUÍ ESTÁ LA MAGIA PARA DESAPLASTARLOS ---
+		btn_trabajo.custom_minimum_size = Vector2(0, 180) # Altura forzada para que quepa todo
+		btn_trabajo.autowrap_mode = TextServer.AUTOWRAP_WORD # Evita que el texto rompa los bordes
 		
 		# --- LÓGICA DE BLOQUEO DE DUPLICADOS ---
 		if Datos.proyectos_activos.has(casting["id_unico"]):
@@ -1419,7 +1689,7 @@ func _on_btn_tec_excelente_pressed():
 		Datos.economia["dinero"] -= 150
 		casting_data_actual["estado_tecnicos"] = "excelente"
 		panel_tecnicos.visible = false
-		iniciar_minijuego_memoria(casting_data_actual["id_unico"])
+		iniciar_skill_check("funcion")
 	else:
 		mostrar_alerta("Sin Fondos", "No tienes $150 para este trato. Elige otra opción.")
 
@@ -1428,7 +1698,7 @@ func _on_btn_tec_normal_pressed():
 		Datos.economia["dinero"] -= 50
 		casting_data_actual["estado_tecnicos"] = "normal"
 		panel_tecnicos.visible = false
-		iniciar_minijuego_memoria(casting_data_actual["id_unico"])
+		iniciar_skill_check("funcion")
 	else:
 		mostrar_alerta("Sin Fondos", "No tienes ni $50. Tendrás que no pagarles.")
 
@@ -1440,7 +1710,7 @@ func _on_btn_tec_nada_pressed():
 		casting_data_actual["estado_tecnicos"] = "normal" # Tuviste suerte, no hicieron nada
 		
 	panel_tecnicos.visible = false
-	iniciar_minijuego_memoria(casting_data_actual["id_unico"])
+	iniciar_skill_check("funcion")
 
 
 # ==========================================
@@ -1669,6 +1939,9 @@ func obtener_arquetipo_dominante() -> String:
 # ==========================================
 # 🃏 APP: MI MAZO DE ACTUACIÓN (BALASIM)
 # ==========================================
+# ==========================================
+# 🃏 APP: MI MAZO DE ACTUACIÓN (BALASIM)
+# ==========================================
 func _on_btn_app_mazo_pressed():
 	contenedor_menu_inicio.visible = false
 	panel_app_mazo.visible = true
@@ -1679,7 +1952,7 @@ func _on_btn_app_mazo_pressed():
 		
 	if Datos.mazo_jugador.is_empty():
 		var lbl = Label.new()
-		lbl.text = "No tienes cartas. ¡Eres un actor de madera!"
+		lbl.text = "No tienes cartas.\n¡Eres un actor de madera!"
 		contenedor_lista_mazo.add_child(lbl)
 		return
 		
@@ -1694,16 +1967,22 @@ func _on_btn_app_mazo_pressed():
 		var cantidad = conteo_cartas[id_carta]
 		var info_carta = Datos.catalogo_cartas[id_carta]
 		
-		var panel_carta = PanelContainer.new() # Un fondito bonito para la carta
+		var panel_carta = PanelContainer.new()
 		var vbox = VBoxContainer.new()
 		
+		# --- NUEVA LÓGICA DE VISUALIZACIÓN DE CARTAS AGOTADAS ---
+		var cant_disponible = Datos.mazo_disponible.count(id_carta)
 		var lbl_titulo = Label.new()
-		lbl_titulo.text = info_carta["nombre"] + " (x" + str(cantidad) + ")"
+		lbl_titulo.text = info_carta["nombre"] + " (Disp: " + str(cant_disponible) + " / Total: " + str(cantidad) + ")"
 		
-		# Color según la rareza
-		if info_carta["rareza"] == "Común": lbl_titulo.modulate = Color(0.8, 0.8, 0.8) # Gris
-		elif info_carta["rareza"] == "Rara": lbl_titulo.modulate = Color(0.2, 0.5, 1.0) # Azul
-		elif info_carta["rareza"] == "Épica": lbl_titulo.modulate = Color(0.8, 0.2, 1.0) # Morado
+		# Color según la rareza (o gris si está agotada)
+		if cant_disponible <= 0:
+			lbl_titulo.modulate = Color(0.5, 0.5, 0.5) # Gris oscuro (Agotada)
+			lbl_titulo.text += " [AGOTADA]"
+		else:
+			if info_carta["rareza"] == "Común": lbl_titulo.modulate = Color(0.8, 0.8, 0.8) 
+			elif info_carta["rareza"] == "Rara": lbl_titulo.modulate = Color(0.2, 0.5, 1.0) 
+			elif info_carta["rareza"] == "Épica": lbl_titulo.modulate = Color(0.8, 0.2, 1.0)
 		
 		var lbl_stats = Label.new()
 		lbl_stats.text = "⭐ Poder: " + str(info_carta["poder"]) + " | Rareza: " + info_carta["rareza"]
@@ -1726,6 +2005,8 @@ func _on_btn_app_mazo_pressed():
 func _on_btn_volver_inicio_mazo_pressed():
 	panel_app_mazo.visible = false
 	contenedor_menu_inicio.visible = true
+
+
 
 
 func _on_btn_fusionar_cartas_pressed():
@@ -1788,7 +2069,9 @@ func ejecutar_fusion_coach(id_resultado, ing1, ing2, costo, nombre_resultado):
 	Datos.mazo_jugador.erase(ing1)
 	Datos.mazo_jugador.erase(ing2)
 	Datos.mazo_jugador.append(id_resultado)
-	
+	Datos.mazo_disponible.erase(ing1)
+	Datos.mazo_disponible.erase(ing2)
+	Datos.mazo_disponible.append(id_resultado)
 	mostrar_alerta("🧠 Sesión Exitosa", "El Coach conectó tus emociones.\nObtuviste:\n🎭 " + nombre_resultado)
 	
 	actualizar_interfaz()
@@ -1799,128 +2082,373 @@ func _on_btn_cerrar_coach_pressed():
 	_on_btn_app_mazo_pressed() # Refrescamos tu mazo normal para ver la carta nueva
 
 # ==========================================
-# 🃏 LÓGICA DE CARTAS (BALASIM)
+# 🃏 LÓGICA DE CARTAS (BALASIM Y RONDAS)
 # ==========================================
 func jugar_carta_balasim(boton_carta, id_carta, info_carta):
-	# Si ya estaba seleccionada, la QUITAMOS
+	# DESELECCIONAR
 	if boton_carta in seleccion_actual_nodos:
 		seleccion_actual_nodos.erase(boton_carta)
 		seleccion_actual_ids.erase(id_carta)
-		boton_carta.modulate = Color(1, 1, 1) # Color normal
+		boton_carta.modulate = Color(1, 1, 1)
+		# FIX: Reactivar Mulligan si no hay nada seleccionado
+		if seleccion_actual_nodos.is_empty() and mulligans_restantes > 0:
+			if is_instance_valid(btn_mulligan): btn_mulligan.disabled = false
+	# SELECCIONAR
 	else:
-		# Si no estaba, la AÑADIMOS (si hay cupo)
-		if seleccion_actual_nodos.size() >= max_cartas_jugables:
-			return # No hace nada si ya llegaste al límite
+		var limite_actual = max_cartas_jugables
+		for id in seleccion_actual_ids:
+			if Datos.catalogo_cartas[id].has("efecto") and Datos.catalogo_cartas[id]["efecto"] == "mas_jugadas":
+				limite_actual += Datos.catalogo_cartas[id]["valor"]
+				
+		if seleccion_actual_nodos.size() >= limite_actual: return 
 			
 		seleccion_actual_nodos.append(boton_carta)
 		seleccion_actual_ids.append(id_carta)
-		boton_carta.modulate = Color(0.3, 1.0, 0.3) # Resaltado verde
-	
-	# Actualizar contador de selección
-	label_poder_jugador.text = "Rondas: " + str(rondas_restantes) + " | Seleccionadas: " + str(seleccion_actual_nodos.size()) + "/" + str(max_cartas_jugables)
+		boton_carta.modulate = Color(0.3, 1.0, 0.3) 
+		if is_instance_valid(btn_mulligan): btn_mulligan.disabled = true
 
-func _on_btn_actuar_pressed():
-	if seleccion_actual_nodos.is_empty(): return
+	actualizar_ui_balasim(label_jefe.text.split("\n")[0].replace("⚔️ ", ""))
+func calcular_puntos_proyectados() -> int:
+	var puntos_proyectados = 0
+	var multiplicador_proyectado = 1.0
+	var arq_jefe = casting_data_actual.get("arquetipo", "comercial")
 	
-	var puntos_ronda = 0
-	var multiplicador_ronda = 1.0
-	
-	# 1. Procesar poder y efectos de las cartas seleccionadas
-	for nodo in seleccion_actual_nodos:
-		# Recuperamos la info guardada en el botón (podemos buscarla en el catálogo)
-		# Nota: Para esto es mejor que el botón guarde su ID. 
-		# Como lo pasamos por bind, procesaremos los puntos usando los IDs guardados.
-		pass 
-	
-	# Cálculo simplificado para esta inyección (recorremos los IDs seleccionados)
 	for id_c in seleccion_actual_ids:
 		var info = Datos.catalogo_cartas[id_c]
-		puntos_ronda += info["poder"]
-		if info.has("efecto") and info["efecto"] == "doblar_poder_actual": multiplicador_ronda *= 2
-		# ... (puedes añadir aquí el resto de efectos como multiplicar_poder)
+		var poder_base = info["poder"]
+		var arq_carta = info.get("arquetipo", "versatil")
+		
+		# --- 1. BONO POR ESTADÍSTICAS DEL ACTOR ---
+		var bono_stat = 0
+		if arq_carta == "fisico": bono_stat = Datos.habilidades_actor.get("cuerpo", 1)
+		elif arq_carta == "forma" or arq_carta == "comercial": bono_stat = Datos.habilidades_actor.get("voz", 1)
+		elif arq_carta == "instinto": bono_stat = Datos.habilidades_actor.get("carisma", 1)
+		elif arq_carta == "metodo": bono_stat = Datos.habilidades_actor.get("memoria", 1)
+		
+		# Balance: Cada 5 puntos en tu habilidad te da +1 de Poder Base a la carta
+		var poder_escalado = poder_base + int(bono_stat / 5.0)
+
+		# --- 2. MULTIPLICADOR POR DEBILIDAD DEL JEFE ---
+		var multi_tipo = 1.0
+		if arq_jefe == "metodo" and arq_carta == "instinto": multi_tipo = 1.5
+		elif arq_jefe == "metodo" and arq_carta == "comercial": multi_tipo = 0.5
+		elif arq_jefe == "comercial" and arq_carta == "metodo": multi_tipo = 1.5
+		elif arq_jefe == "comercial" and arq_carta == "fisico": multi_tipo = 0.5
+		elif arq_jefe == "fisico" and arq_carta == "comercial": multi_tipo = 1.5
+		elif arq_jefe == "fisico" and arq_carta == "forma": multi_tipo = 0.5
+		elif arq_jefe == "forma" and arq_carta == "fisico": multi_tipo = 1.5
+		elif arq_jefe == "forma" and arq_carta == "instinto": multi_tipo = 0.5
+		elif arq_jefe == "instinto" and arq_carta == "forma": multi_tipo = 1.5
+		elif arq_jefe == "instinto" and arq_carta == "metodo": multi_tipo = 0.5
+		
+		# Aplicamos el multiplicador al poder ya escalado por tus stats
+		puntos_proyectados += int(poder_escalado * multi_tipo)
+		
+		if info.has("efecto"):
+			var ef = info["efecto"]
+			var val = float(info["valor"])
+			if ef == "doblar_poder_actual": multiplicador_proyectado *= 2.0
+			elif ef == "multiplicar_poder": multiplicador_proyectado *= val
+			elif ef == "escalar_carisma": puntos_proyectados += int(Datos.habilidades_actor["carisma"] * val)
+			
+	if seleccion_actual_ids.size() >= 2:
+		for id_combo in Datos.combos_balasim.keys():
+			var combo = Datos.combos_balasim[id_combo]
+			var req1 = combo["cartas"][0]
+			var req2 = combo["cartas"][1]
+			if seleccion_actual_ids.has(req1) and seleccion_actual_ids.has(req2):
+				if req1 == req2 and seleccion_actual_ids.count(req1) < 2: continue
+				multiplicador_proyectado *= combo["multiplicador"]
+				break
+				
+	return int(puntos_proyectados * multiplicador_proyectado)
+func _on_btn_actuar_pressed():
+	# Contamos cuántas cartas REALES tienes en la mano (que no estén a punto de borrarse)
+	var cartas_vivas = 0
+	for hijo in contenedor_mano.get_children():
+		if not hijo.is_queued_for_deletion() and hijo is Button:
+			cartas_vivas += 1
+			
+	if seleccion_actual_nodos.is_empty() and cartas_vivas > 0: 
+		return # Si tienes cartas en la mano, debes seleccionar al menos 1
+		
+	var puntos_ronda = 0
+	var multiplicador_ronda = 1.0
+	var robar_cartas_extra = 0
 	
-	# 2. Buscar Combos
-	for id_combo in Datos.combos_balasim.keys():
-		var combo = Datos.combos_balasim[id_combo]
-		if seleccion_actual_ids.has(combo["cartas"][0]) and seleccion_actual_ids.has(combo["cartas"][1]):
-			puntos_ronda = int(puntos_ronda * combo["multiplicador"])
-			mostrar_alerta("🔥 COMBO!", combo["nombre_combo"])
+	# 1. EJECUTAR PODERES Y EFECTOS
+	var arq_jefe = casting_data_actual.get("arquetipo", "comercial")
 	
-	poder_total_encuentro += int(puntos_ronda * multiplicador_ronda)
+	for id_c in seleccion_actual_ids:
+		var info = Datos.catalogo_cartas[id_c]
+		var poder_base = info["poder"]
+		var arq_carta = info.get("arquetipo", "versatil")
+		
+		# --- 1. BONO POR ESTADÍSTICAS DEL ACTOR ---
+		var bono_stat = 0
+		if arq_carta == "fisico": bono_stat = Datos.habilidades_actor.get("cuerpo", 1)
+		elif arq_carta == "forma" or arq_carta == "comercial": bono_stat = Datos.habilidades_actor.get("voz", 1)
+		elif arq_carta == "instinto": bono_stat = Datos.habilidades_actor.get("carisma", 1)
+		elif arq_carta == "metodo": bono_stat = Datos.habilidades_actor.get("memoria", 1)
+		
+		var poder_escalado = poder_base + int(bono_stat / 5.0)
+		
+		# --- 2. MULTIPLICADOR POR DEBILIDAD DEL JEFE ---
+		var multi_tipo = 1.0
+		if arq_jefe == "metodo" and arq_carta == "instinto": multi_tipo = 1.5
+		elif arq_jefe == "metodo" and arq_carta == "comercial": multi_tipo = 0.5
+		elif arq_jefe == "comercial" and arq_carta == "metodo": multi_tipo = 1.5
+		elif arq_jefe == "comercial" and arq_carta == "fisico": multi_tipo = 0.5
+		elif arq_jefe == "fisico" and arq_carta == "comercial": multi_tipo = 1.5
+		elif arq_jefe == "fisico" and arq_carta == "forma": multi_tipo = 0.5
+		elif arq_jefe == "forma" and arq_carta == "fisico": multi_tipo = 1.5
+		elif arq_jefe == "forma" and arq_carta == "instinto": multi_tipo = 0.5
+		elif arq_jefe == "instinto" and arq_carta == "forma": multi_tipo = 1.5
+		elif arq_jefe == "instinto" and arq_carta == "metodo": multi_tipo = 0.5
+		
+		puntos_ronda += int(poder_escalado * multi_tipo)
+		
+		if info.has("efecto"):
+			var ef = info["efecto"]
+			var val = float(info["valor"])
+			
+			if ef == "bajar_exigencia": exigencia_director = max(1, exigencia_director - int(val))
+			elif ef == "curar_estres": Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] - int(val), 0, 100)
+			elif ef == "robar_carta": robar_cartas_extra += int(val)
+			elif ef == "doblar_poder_actual": multiplicador_ronda *= 2.0
+			elif ef == "multiplicar_poder": multiplicador_ronda *= val
+			elif ef == "escalar_carisma": puntos_ronda += int(Datos.habilidades_actor["carisma"] * val)
+			elif ef == "restaurar_mulligan": mulligans_restantes += int(val)
+			elif ef == "sacrificar_energia":
+				if Datos.stats_actor["energia_actual"] >= val: Datos.stats_actor["energia_actual"] -= int(val)
+				else: puntos_ronda -= info["poder"] 
 	
-	# 3. Comprobar Victoria
-	if poder_total_encuentro >= exigencia_director:
+	# 2. BUSCAR COMBOS
+	var texto_combo = ""
+	if seleccion_actual_ids.size() >= 2:
+		for id_combo in Datos.combos_balasim.keys():
+			var combo = Datos.combos_balasim[id_combo]
+			var req1 = combo["cartas"][0]
+			var req2 = combo["cartas"][1]
+			
+			if seleccion_actual_ids.has(req1) and seleccion_actual_ids.has(req2):
+				if req1 == req2 and seleccion_actual_ids.count(req1) < 2: continue
+				multiplicador_ronda *= combo["multiplicador"]
+				texto_combo += combo["nombre_combo"] + "\n"
+				break
+	
+	var puntos_finales = int(puntos_ronda * multiplicador_ronda)
+	poder_acumulado_turno += puntos_finales
+	
+	# LOG DE BATALLA Y COMBOS
+	escribir_log_batalla("🎭 Actuaste. Generaste " + str(puntos_finales) + " puntos.")
+	if texto_combo != "": escribir_log_batalla("🔥 COMBO ACTIVADO: " + texto_combo.replace("\n", " "))
+	
+	# --- CASTIGO DE CARTAS DE PELIGRO EN MANO ---
+	for hijo in contenedor_mano.get_children():
+		if not hijo.is_queued_for_deletion() and not hijo in seleccion_actual_nodos:
+			if "Pánico" in hijo.text:
+				Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] + 15, 0, 100)
+				mostrar_alerta("💥 Pánico Acumulado", "No lidiaste con tu Ataque de Pánico. (+15 Estrés)")
+				
+	# 3. QUEMAR CARTAS (Mazo Semanal) Y LIMPIAR MESA
+	for id_c in seleccion_actual_ids:
+		Datos.mazo_disponible.erase(id_c) 
+		
+	for nodo in seleccion_actual_nodos:
+		if is_instance_valid(nodo): nodo.queue_free()
+	seleccion_actual_nodos.clear()
+	seleccion_actual_ids.clear()
+	
+	# 4. RESOLUCIÓN DE LA RONDA
+	if poder_acumulado_turno >= exigencia_director:
 		panel_balasim.visible = false
 		resolver_rutina_general(true)
 		return
 		
-	# 4. Acción del Jefe y Siguiente Ronda
 	rondas_restantes -= 1
 	if rondas_restantes <= 0:
 		panel_balasim.visible = false
 		resolver_rutina_general(false)
 	else:
-		ejecutar_accion_jefe()
-		seleccion_actual_nodos.clear()
-		seleccion_actual_ids.clear()
-		repartir_mano_balasim() # Robamos cartas nuevas para la siguiente ronda
-		actualizar_ui_balasim(label_jefe.text.split("\n")[0])
+		ejecutar_accion_jefe() # El Jefe Ataca
+		repartir_mano_balasim(false) # Rellena la mano
+		
+		if robar_cartas_extra > 0: 
+			var mazo_temp = Datos.mazo_jugador.duplicate()
+			mazo_temp.shuffle()
+			for i in range(robar_cartas_extra):
+				if mazo_temp.size() > 0: crear_boton_carta_en_mesa(mazo_temp[i])
 
+		if mulligans_restantes > 0: btn_mulligan.disabled = false
+		actualizar_ui_balasim(label_jefe.text.split("\n")[0].replace("⚔️ ", ""))
+# --- EL JEFE SE DEFIENDE (IA DINÁMICA + SABOTAJE MENTAL) ---
 func ejecutar_accion_jefe():
-	var azar = randi_range(1, 3)
-	if azar == 1:
-		# El jefe te quita una carta al azar de tu mazo este encuentro
-		if Datos.mazo_jugador.size() > 5:
-			var carta_borrada = Datos.mazo_jugador.pick_random()
-			# (Lógica visual opcional)
-			mostrar_alerta("🚫 CRÍTICA DURA", "El jefe odió tu técnica. No podrás usar '" + Datos.catalogo_cartas[carta_borrada]["nombre"] + "' en esta audición.")
-	elif azar == 2:
-		# El jefe te aumenta la exigencia
-		exigencia_director += 5
-		mostrar_alerta("📈 MÁS EXIGENCIA", "El director se puso de mal humor. (+5 puntos necesarios)")
+	var progreso = float(poder_acumulado_turno) / float(exigencia_director)
+	var arquetipo_jefe = casting_data_actual.get("arquetipo", "comercial")
+	
+	# Si no es un casting, le damos un arquetipo genérico
+	if tipo_rutina == "trabajo": arquetipo_jefe = "fisico"
+	elif tipo_rutina == "ensayo_casa": arquetipo_jefe = "metodo"
+	
+	var nombre_entidad = "El Jefe"
+	if tipo_rutina == "casting_real" or tipo_rutina == "ensayo_cast": nombre_entidad = "El Director"
+	elif tipo_rutina == "funcion": nombre_entidad = "El Público"
+	elif tipo_rutina == "trabajo": nombre_entidad = "El Cliente"
+	elif tipo_rutina == "ensayo_casa": nombre_entidad = "Tu Impostor"
 
-
-func _on_btn_mulligan_pressed():
-	if mulligans_restantes <= 0:
+	# --- IA: DECISIÓN BASADA EN EL PROGRESO ---
+	if progreso >= 0.8:
+		var subida = randi_range(10, 20)
+		exigencia_director += subida
+		mostrar_alerta("🔥 " + nombre_entidad + " se pone EXIGENTE", "Saben que lo tienes dominado y deciden probarte al límite. (+" + str(subida) + " pts exigidos)")
 		return
-		
-	mulligans_restantes -= 1
-	btn_mulligan.text = "🔄 Redibujar Mano (" + str(mulligans_restantes) + " rest.)"
+
+	# --- IA: DECISIÓN POR ARQUETIPO ---
+	var accion = randi_range(1, 100)
 	
-	if mulligans_restantes == 0:
-		btn_mulligan.disabled = true
-		
-	# Efecto de sonido/alerta visual (opcional)
-	mostrar_alerta("🔄 Cambio de Táctica", "Tiraste tu mano actual a la basura. ¡Robando nuevas cartas!")
+	if arquetipo_jefe == "fisico":
+		if accion <= 50:
+			var subida = randi_range(5, 12)
+			exigencia_director += subida
+			mostrar_alerta("📈 Desgaste Físico", nombre_entidad + " te pide repetir la escena con más intensidad. (+" + str(subida) + " pts)")
+		elif accion <= 80:
+			# NUEVO: Sabotaje Mental
+			mostrar_alerta("🧠 Dudas", nombre_entidad + " te intimida físicamente. Tu mente se llena de Nervios.")
+			inyectar_carta_peligro("basura_nervios")
+		else:
+			mostrar_alerta("⏱️ Silencio Físico", nombre_entidad + " te observa sudar. Espera más de ti.")
+			
+	elif arquetipo_jefe == "metodo":
+		if accion <= 40:
+			Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] + 12, 0, 100)
+			mostrar_alerta("💢 Destrucción Psicológica", nombre_entidad + " cuestiona tu talento y te hace dudar. (+12 Estrés)")
+		elif accion <= 70 and mulligans_restantes > 0:
+			mulligans_restantes -= 1
+			mostrar_alerta("🚫 Confusión Mental", nombre_entidad + " te grita que olvides tus trucos. (-1 Acción de Redibujar)")
+		elif accion <= 90:
+			# NUEVO: Sabotaje Mental Extremo
+			mostrar_alerta("😱 Presión Extrema", "Sientes la presión del método en tu contra. Entras en Pánico.")
+			inyectar_carta_peligro("basura_panico")
+		else:
+			mostrar_alerta("⏱️ Silencio de Método", nombre_entidad + " clava su mirada en tu alma en absoluto silencio...")
+			
+	elif arquetipo_jefe == "forma":
+		if progreso < 0.3 and accion <= 50:
+			Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] + 15, 0, 100)
+			mostrar_alerta("📜 Rigurosidad Clásica", nombre_entidad + " se ofende por tu falta de técnica. (+15 Estrés)")
+		elif accion <= 80:
+			exigencia_director += 8
+			mostrar_alerta("📈 Corrección de Dicción", "Te piden que repitas la línea con una mejor proyección. (+8 pts)")
+		elif accion <= 95:
+			mostrar_alerta("🧠 Crítica Duda", "Te critican la postura y pierdes el enfoque. Te llenas de Nervios.")
+			inyectar_carta_peligro("basura_nervios")
+		else:
+			mostrar_alerta("⏱️ Pausa Clásica", nombre_entidad + " revisa sus notas con desaprobación.")
+			
+	else: # Comercial / Instinto 
+		if accion <= 30:
+			exigencia_director += randi_range(3, 8)
+			mostrar_alerta("📈 Petición Comercial", "Te piden que lo hagas 'más alegre y vendible'. La meta sube un poco.")
+		elif accion <= 60:
+			Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] + 8, 0, 100)
+			mostrar_alerta("💢 Presión de Set", "El tiempo es dinero. Te apresuran y te pones nervioso. (+8 Estrés)")
+		elif accion <= 85:
+			mostrar_alerta("😱 Imprevisto", "Cambian el guion a última hora. ¡Entras en Pánico!")
+			inyectar_carta_peligro("basura_panico")
+		else:
+			mostrar_alerta("⏱️ Tiempo de Cámara", "Están ajustando las luces. Tienes un momento para pensar tu siguiente jugada.")
+func inyectar_carta_peligro(id_peligro):
+	if contenedor_mano.get_child_count() >= 6:
+		var victima = contenedor_mano.get_child(0)
+		if is_instance_valid(victima): victima.queue_free()
+
+	var info = Datos.catalogo_cartas[id_peligro]
+	var btn_peligro = Button.new()
+	btn_peligro.text = "⚠️ " + info["nombre"] + "\n(Click 4 veces para calmarte)"
+	btn_peligro.custom_minimum_size = Vector2(120, 160)
 	
-	# 1. Limpiamos la mesa actual (Solo las cartas, no tu poder ya acumulado)
-	for hijo in contenedor_mano.get_children(): 
-		hijo.queue_free()
-		
-	# 2. Volvemos a robar
-	var mazo_temp = Datos.mazo_jugador.duplicate()
+	# Variables de comportamiento insertadas en el botón
+	btn_peligro.set_meta("es_peligro", true)
+	btn_peligro.set_meta("clicks", 4)
+
+	# Animación de latido de corazón (Peligro)
+	var tween = get_tree().create_tween().set_loops()
+	btn_peligro.modulate = Color(1.0, 0.2, 0.2)
+	tween.tween_property(btn_peligro, "modulate", Color(0.4, 0.0, 0.0), 0.4)
+	tween.tween_property(btn_peligro, "modulate", Color(1.0, 0.2, 0.2), 0.4)
+
+	# Lógica al hacerle click (NO ACTIVA `jugar_carta_balasim`)
+	btn_peligro.pressed.connect(func():
+		var c = btn_peligro.get_meta("clicks") - 1
+		if c <= 0:
+			escribir_log_batalla("🌟 Dominaste tus nervios y destruiste: " + info["nombre"])
+			btn_peligro.queue_free()
+		else:
+			btn_peligro.set_meta("clicks", c)
+			btn_peligro.text = "⚠️ " + info["nombre"] + "\n(" + str(c) + " clicks más)"
+			# Efecto tedioso pero no complejo: tiembla para dar sensación de ansiedad
+			btn_peligro.position.x += randf_range(-8, 8)
+			btn_peligro.position.y += randf_range(-8, 8)
+	)
+	contenedor_mano.add_child(btn_peligro)
+	escribir_log_batalla("💥 El Jefe saboteó tu mente con: " + info["nombre"])
+# --- REPARTIDOR DE CARTAS ---
+# --- REPARTIDOR DE CARTAS ---
+func repartir_mano_balasim(limpiar_mesa):
+	var cartas_en_mesa = 0
+	
+	if limpiar_mesa:
+		for hijo in contenedor_mano.get_children(): 
+			hijo.queue_free()
+	else:
+		# Truco experto: Contar solo las cartas que NO se están borrando
+		for hijo in contenedor_mano.get_children():
+			if not hijo.is_queued_for_deletion() and hijo is Button:
+				cartas_en_mesa += 1
+	
+	var tamano_mano_max = clamp(3 + int(Datos.habilidades_actor["memoria"] / 2), 3, 7)
+	var a_robar = tamano_mano_max - cartas_en_mesa
+	
+	# ... código anterior ...
+	if a_robar <= 0: return
+	
+	var mazo_temp = Datos.mazo_disponible.duplicate() # <--- AHORA TOMA LAS DISPONIBLES
 	mazo_temp.shuffle() 
 	
-	var tamano_mano = 3 + int(Datos.habilidades_actor["memoria"] / 2) 
-	tamano_mano = clamp(tamano_mano, 3, 7) 
-	
-	for i in range(min(tamano_mano, mazo_temp.size())):
-		var id_carta = mazo_temp[i]
-		var info = Datos.catalogo_cartas[id_carta]
+	for i in range(min(a_robar, mazo_temp.size())):
+		crear_boton_carta_en_mesa(mazo_temp[i])
 		
-		var btn_carta = Button.new()
-		
-		var texto_extra = ""
-		if info.has("efecto"):
-			if info["efecto"] == "robar_carta": texto_extra = "\n🎴 +Cartas"
-			elif info["efecto"] == "doblar_poder_actual": texto_extra = "\n💥 Poder x2"
-			elif info["efecto"] == "mas_jugadas": texto_extra = "\n⚡ +1 Jugada"
-			
-		btn_carta.text = info["nombre"] + "\n⭐ Poder: " + str(info["poder"]) + texto_extra
-		btn_carta.custom_minimum_size = Vector2(120, 160)
-		btn_carta.pressed.connect(jugar_carta_balasim.bind(btn_carta, id_carta, info))
-		contenedor_mano.add_child(btn_carta)
+	if Datos.mazo_disponible.is_empty(): # <--- MENSAJE ACTUALIZADO
+		var lbl = Label.new()
+		lbl.text = "⚠️ CARTAS AGOTADAS\nTe quedaste sin técnicas esta semana.\nUsa tu Carisma base dando a 'Actuar'."
+		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		contenedor_mano.add_child(lbl)
 
+func crear_boton_carta_en_mesa(id_c):
+	var info = Datos.catalogo_cartas[id_c]
+	var btn_c = Button.new()
+	var txt_extra = ""
+	if info.has("efecto"): txt_extra = "\n✨ Especial"
+	btn_c.text = info["nombre"] + "\n⭐ " + str(info["poder"]) + txt_extra
+	btn_c.custom_minimum_size = Vector2(120, 160)
+	btn_c.pressed.connect(jugar_carta_balasim.bind(btn_c, id_c, info))
+	contenedor_mano.add_child(btn_c)
+
+func _on_btn_mulligan_pressed():
+	if mulligans_restantes <= 0: return
+	
+	mulligans_restantes -= 1
+	
+	# Limpiamos si tenías alguna carta seleccionada (verde)
+	seleccion_actual_nodos.clear()
+	seleccion_actual_ids.clear()
+	
+	# Usamos la nueva función modular para limpiar la mesa y robar
+	repartir_mano_balasim(true)
+	
+	# Actualizamos los textos de la interfaz
+	actualizar_ui_balasim(label_jefe.text.split("\n")[0].replace("⚔️ ", ""))
 
 # ==========================================
 # 🎓 APP ACADEMIA (COMPRA DE CARTAS)
@@ -1937,7 +2465,6 @@ func comprar_curso(tipo_curso):
 	var costo = 0
 	var costo_energia = 0
 	var cartas_ganadas = []
-	
 	# 1. Separar el catálogo por rarezas para el RNG
 	var cat_comunes = []; var cat_raras = []; var cat_epicas = []; var cat_legendarias = []
 	for id in Datos.catalogo_cartas.keys():
@@ -1979,6 +2506,7 @@ func comprar_curso(tipo_curso):
 		var texto_alerta = "Has asistido a la clase y tu técnica mejoró. Aprendiste:\n\n"
 		for id_carta in cartas_ganadas:
 			Datos.mazo_jugador.append(id_carta)
+			Datos.mazo_disponible.append(id_carta)
 			texto_alerta += "🎭 " + Datos.catalogo_cartas[id_carta]["nombre"] + " (" + Datos.catalogo_cartas[id_carta]["rareza"] + ")\n"
 			
 		mostrar_alerta("🎓 Clase Completada", texto_alerta)
@@ -1996,22 +2524,129 @@ func comprobar_pago_clase(costo, energia) -> bool:
 	Datos.stats_actor["energia_actual"] -= energia
 	Datos.economia["dinero"] -= costo
 	return true
-func repartir_mano_balasim():
-	for hijo in contenedor_mano.get_children(): hijo.queue_free()
-	
-	var mazo_temp = Datos.mazo_jugador.duplicate()
-	mazo_temp.shuffle()
-	var tamano_mano = clamp(3 + int(Datos.habilidades_actor["memoria"] / 2), 3, 7)
-	
-	for i in range(min(tamano_mano, mazo_temp.size())):
-		var id_c = mazo_temp[i]
-		var info = Datos.catalogo_cartas[id_c]
-		var btn_c = Button.new()
-		btn_c.text = info["nombre"] + "\n⭐ " + str(info["poder"])
-		btn_c.custom_minimum_size = Vector2(120, 160)
-		btn_c.pressed.connect(jugar_carta_balasim.bind(btn_c, id_c, info))
-		contenedor_mano.add_child(btn_c)
+
 # --- CONEXIÓN DE BOTONES ---
 func _on_btn_curso_basico_pressed(): comprar_curso("basico")
 func _on_btn_curso_medio_pressed(): comprar_curso("medio")
 func _on_btn_curso_pro_pressed(): comprar_curso("pro")
+# ==========================================
+# 🛠️ MODO DESARROLLADOR Y TRAMPAS
+# ==========================================
+var panel_admin_creado = false
+var nodo_panel_admin = null
+
+func _input(event):
+	# F12: Bomba Nuclear (Borra progreso)
+	if event is InputEventKey and event.pressed and event.keycode == KEY_F12:
+		Datos.borrar_partida()
+		get_tree().reload_current_scene()
+		print("¡BOMBA NUCLEAR! Partida borrada.")
+		
+	# F11: Abrir/Cerrar Menú Admin
+	if event is InputEventKey and event.pressed and event.keycode == KEY_F11:
+		if not panel_admin_creado: crear_panel_admin()
+		nodo_panel_admin.visible = not nodo_panel_admin.visible
+
+func crear_panel_admin():
+	panel_admin_creado = true
+	nodo_panel_admin = PanelContainer.new()
+	nodo_panel_admin.position = Vector2(10, 50) # Arriba a la izquierda
+	nodo_panel_admin.z_index = 100 # Para que quede por encima de todo
+	
+	var vbox = VBoxContainer.new()
+	var lbl = Label.new()
+	lbl.text = "🔧 MODO DIOS"
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(lbl)
+	
+	var btn_dinero = Button.new(); btn_dinero.text = "💰 +$1000"
+	btn_dinero.pressed.connect(func(): Datos.economia["dinero"] += 1000; actualizar_interfaz())
+	
+	var btn_energia = Button.new(); btn_energia.text = "⚡ Energía Infinita"
+	btn_energia.pressed.connect(func(): Datos.stats_actor["energia_actual"] = 999; actualizar_interfaz())
+	
+	var btn_xp = Button.new(); btn_xp.text = "🧠 +100 XP"
+	btn_xp.pressed.connect(func(): Datos.habilidades_actor["xp_actual"] += 100; comprobar_level_up(); actualizar_interfaz())
+	
+	var btn_dia = Button.new(); btn_dia.text = "⏩ Saltar Día"
+	btn_dia.pressed.connect(func(): _on_boton_dormir_pressed())
+
+	var btn_cartas = Button.new(); btn_cartas.text = "🃏 Rellenar Mano"
+	btn_cartas.pressed.connect(func(): Datos.mazo_disponible = Datos.mazo_jugador.duplicate(); mostrar_alerta("Admin", "Mazo Disponible recargado."))
+
+	vbox.add_child(btn_dinero); vbox.add_child(btn_energia); vbox.add_child(btn_xp)
+	vbox.add_child(btn_dia); vbox.add_child(btn_cartas)
+	nodo_panel_admin.add_child(vbox)
+	$CapaUI.add_child(nodo_panel_admin)
+# ==========================================
+# 🛒 MERCADO ROTATIVO DE CARTAS
+# ==========================================
+func generar_mercado_diario():
+	Datos.mercado_hoy.clear()
+	var todas_las_cartas = Datos.catalogo_cartas.keys()
+	todas_las_cartas.shuffle()
+	
+	# Elegimos 3 cartas al azar que no sean la "Basura" del jefe
+	var agregadas = 0
+	for id in todas_las_cartas:
+		if Datos.catalogo_cartas[id].get("efecto", "") != "basura":
+			Datos.mercado_hoy.append(id)
+			agregadas += 1
+		if agregadas >= 3: break
+func abrir_tienda_cartas():
+	var dialog = AcceptDialog.new()
+	dialog.title = "🎓 Academia: Nuevas Técnicas"
+	dialog.dialog_text = "Aprende nuevas técnicas para tu mazo (Rotan cada día):"
+	dialog.ok_button_text = "Salir de la Academia"
+	
+	var vbox = VBoxContainer.new()
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	
+	for id_c in Datos.mercado_hoy:
+		var info = Datos.catalogo_cartas[id_c]
+		var btn_comprar = Button.new()
+		var precio = info.get("poder", 10) * 5 + 50 # El precio escala según lo buena que sea
+		
+		btn_comprar.text = "Comprar: " + info["nombre"] + " ($" + str(precio) + ")\n" + info["desc"]
+		btn_comprar.custom_minimum_size = Vector2(250, 60)
+		btn_comprar.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		
+		btn_comprar.pressed.connect(func():
+			if Datos.economia["dinero"] >= precio:
+				Datos.economia["dinero"] -= precio
+				Datos.mazo_jugador.append(id_c)
+				Datos.mazo_disponible.append(id_c)
+				Datos.mercado_hoy.erase(id_c)
+				btn_comprar.disabled = true
+				btn_comprar.text = "¡Técnica Aprendida!"
+				actualizar_interfaz()
+				mostrar_alerta("🎓 Éxito", "Has añadido '" + info["nombre"] + "' a tu mazo.")
+			else:
+				mostrar_alerta("💸 Sin fondos", "No tienes dinero suficiente.")
+		)
+		vbox.add_child(btn_comprar)
+		
+	dialog.add_child(vbox)
+	add_child(dialog)
+	dialog.popup_centered()
+
+func intentar_vender_carta(id_carta):
+	var info = Datos.catalogo_cartas[id_carta]
+	var dialog = ConfirmationDialog.new()
+	dialog.title = "🗑️ Olvidar Técnica"
+	dialog.dialog_text = "¿Deseas olvidar la técnica '" + info["nombre"] + "'?\n\nRecuperarás $25 y limpiarás tu mazo para que salgan mejores combos en batalla."
+	dialog.get_ok_button().text = "Vender ($25)"
+	dialog.get_cancel_button().text = "Cancelar"
+	
+	dialog.confirmed.connect(func():
+		Datos.mazo_jugador.erase(id_carta)
+		if Datos.mazo_disponible.has(id_carta): Datos.mazo_disponible.erase(id_carta)
+		Datos.economia["dinero"] += 25
+		actualizar_interfaz()
+		mostrar_alerta("🗑️ Mazo Limpio", "Has olvidado la técnica. Tu mazo ahora es más eficiente.")
+		# NOTA: Cierra y vuelve a abrir tu panel del mazo para ver los cambios
+		dialog.queue_free()
+	)
+	dialog.canceled.connect(func(): dialog.queue_free())
+	add_child(dialog)
+	dialog.popup_centered()
