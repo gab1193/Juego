@@ -451,8 +451,34 @@ func iniciar_skill_check(tipo):
 		# --- ESCALADO DE MEMORIA (RECURSOS DE BATALLA) ---
 		# Empiezas con 2 Mulligans base. Por cada 10 puntos de Memoria, ganas 1 extra.
 		mulligans_restantes = 2 + int(Datos.habilidades_actor.get("memoria", 1) / 10.0)
+		# --- 🌟 SUPERPODERES DE ARQUETIPO DOMINANTE (ESCALADO INFINITO) ---
+		var mi_arquetipo = obtener_arquetipo_dominante()
+		var nivel_arq = Datos.perfil_actor.get(mi_arquetipo, 0)
+		var robar_extra_instinto = 0
+		
+		if mi_arquetipo == "comercial":
+			var bono_fama = 10 + int(nivel_arq / 2.0)
+			poder_acumulado_turno += bono_fama
+			escribir_log_batalla("💸 Favoritismo (Comercial): Tu fama te precede. Empiezas con +" + str(bono_fama) + " Pts.")
+			
+		elif mi_arquetipo == "fisico":
+			var bono_mull = 1 + int(nivel_arq / 20.0)
+			mulligans_restantes += bono_mull
+			escribir_log_batalla("💪 Inagotable (Físico): Tu condición física te da +" + str(bono_mull) + " Redibujos extra.")
+			
+		elif mi_arquetipo == "instinto":
+			robar_extra_instinto = 1 + int(nivel_arq / 25.0)
+			escribir_log_batalla("⚡ Mente Rápida (Instinto): Robarás " + str(robar_extra_instinto) + " carta(s) extra este turno.")
 		actualizar_ui_balasim(nombre_jefe)
 		repartir_mano_balasim(true)
+		
+		# Aplicamos el poder de robo extra del Instinto
+		if robar_extra_instinto > 0:
+			for i in range(robar_extra_instinto):
+				if Datos.mazo_disponible.size() > 0:
+					var extra_id = Datos.mazo_disponible.pick_random()
+					crear_boton_carta_en_mesa(extra_id)
+					Datos.mazo_disponible.erase(extra_id)
 		
 		# --- GESTIÓN DEL LOG DE BATALLA ---
 		var vbox_log = null
@@ -523,7 +549,19 @@ func actualizar_ui_balasim(nombre_jefe):
 	btn_mulligan.text = "🔄 Redibujar (" + str(mulligans_restantes) + " rest.)"
 
 func _on_boton_trabajar_pressed(): 
-	if not ha_trabajado_hoy: iniciar_skill_check("trabajo")
+	if not ha_trabajado_hoy:
+		if Datos.stats_actor["energia_actual"] >= 2:
+			Datos.stats_actor["energia_actual"] -= 2
+			tipo_rutina = "trabajo"
+			panel_rutina.visible = true
+			
+			label_titulo_rutina.text = "☕ ¡Mesa 4!\nDetén la barra en lo verde (Click o Espacio) para no tirar la charola."
+			
+			rutina_activa = true
+			# Entre más estrés tengas, más rápido tiembla tu pulso
+			cursor_velocidad = 300 + (Datos.stats_actor["estres"] * 4) 
+		else:
+			mostrar_alerta("¡Exhausto!", "No tienes 2 de Energía para trabajar de mesero.")
 func _on_boton_ensayar_pressed():
 	if Datos.stats_actor["energia_actual"] < 1:
 		mostrar_alerta("¡Exhausto!", "No tienes energía para ensayar.")
@@ -780,7 +818,14 @@ func resolver_rutina_general(fue_exito):
 			publicar_auto("Días difíciles trabajando en '" + titulo_obra + "'. A repasar guion. 📖")
 			
 		Datos.agenda.erase(Datos.tiempo["dia"]) 
-		
+		# --- 🌟 PODER FINAL DEL MÉTODO (VAMPIRISMO DE ESTRÉS) ---
+	var mi_arq_final = obtener_arquetipo_dominante()
+	var nivel_arq_final = Datos.perfil_actor.get(mi_arq_final, 0)
+
+	if fue_exito and mi_arq_final == "metodo":
+		var cura = 10 + int(nivel_arq_final / 2.0)
+		Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] - cura, 0, 100)
+		mostrar_alerta("🧠 Catarsis del Método", "Usaste la presión de la victoria a tu favor. Curaste -" + str(cura) + " de Estrés.")
 	comprobar_level_up()
 	actualizar_interfaz()
 
@@ -840,8 +885,8 @@ func _on_boton_dormir_pressed():
 		Datos.mazo_disponible = Datos.mazo_jugador.duplicate()
 		mostrar_alerta("🗓️ Inicio de Semana", "¡Has descansado y recuperado la inspiración!\nTodas las cartas que usaste la semana pasada han vuelto a tu Mazo Disponible.")
 	# La energía máxima ya no es fija, escala con tu estadística de Cuerpo
-	var bono_cuerpo = Datos.habilidades_actor.get("cuerpo", 1)
-	Datos.stats_actor["energia_maxima"] = 100 + int(bono_cuerpo * 2)
+	# Actualizamos tu energía usando tu propia función base
+	recalcular_stats_pasivos()
 	Datos.stats_actor["energia_actual"] = Datos.stats_actor["energia_maxima"]
 	Datos.economia["dinero"] -= 15 
 	
@@ -917,6 +962,7 @@ func _on_boton_dormir_pressed():
 # --- AUTO-GUARDADO AL FINALIZAR EL DÍA ---
 	Datos.guardar_partida()
 	mostrar_alerta("💤 Día Finalizado", "Has descansado. Tu progreso ha sido guardado automáticamente.")
+	
 func comprobar_level_up():
 	var subio_nivel = false
 	while Datos.habilidades_actor["xp_actual"] >= Datos.habilidades_actor["xp_requerida"]:
@@ -1998,7 +2044,15 @@ func _on_btn_app_mazo_pressed():
 		
 		var separador = HSeparator.new()
 		vbox.add_child(separador)
+		# --- BOTÓN DE OLVIDAR TÉCNICA ---
+		var btn_vender = Button.new()
+		btn_vender.text = "🗑️ Olvidar Técnica (+$25)"
+		btn_vender.modulate = Color(1.0, 0.5, 0.5) # Color rojo suave
+		btn_vender.pressed.connect(intentar_vender_carta.bind(id_carta))
+		vbox.add_child(btn_vender)
 		
+		panel_carta.add_child(vbox) # <--- (Esta línea ya la tienes, va justo después)
+		contenedor_lista_mazo.add_child(panel_carta) # <--- (Esta también ya la tienes)
 		panel_carta.add_child(vbox)
 		contenedor_lista_mazo.add_child(panel_carta)
 
@@ -2161,6 +2215,11 @@ func calcular_puntos_proyectados() -> int:
 				multiplicador_proyectado *= combo["multiplicador"]
 				break
 				
+				# --- 🌟 PODER ACTIVO DEL MÉTODO (RIESGO/RECOMPENSA) ---
+	var mi_arq = obtener_arquetipo_dominante()
+	if mi_arq == "metodo" and Datos.stats_actor["estres"] >= 50:
+		var multiplicador_locura = 1.0 + (Datos.perfil_actor.get("metodo", 0) / 100.0)
+		multiplicador_proyectado *= multiplicador_locura
 	return int(puntos_proyectados * multiplicador_proyectado)
 func _on_btn_actuar_pressed():
 	# Contamos cuántas cartas REALES tienes en la mano (que no estén a punto de borrarse)
@@ -2236,7 +2295,11 @@ func _on_btn_actuar_pressed():
 				multiplicador_ronda *= combo["multiplicador"]
 				texto_combo += combo["nombre_combo"] + "\n"
 				break
-	
+	# --- 🌟 PODER ACTIVO DEL MÉTODO (RIESGO/RECOMPENSA) ---
+	var mi_arq = obtener_arquetipo_dominante()
+	if mi_arq == "metodo" and Datos.stats_actor["estres"] >= 50:
+		var multiplicador_locura = 1.0 + (Datos.perfil_actor.get("metodo", 0) / 100.0)
+		multiplicador_ronda *= multiplicador_locura
 	var puntos_finales = int(puntos_ronda * multiplicador_ronda)
 	poder_acumulado_turno += puntos_finales
 	
@@ -2359,6 +2422,18 @@ func ejecutar_accion_jefe():
 		else:
 			mostrar_alerta("⏱️ Tiempo de Cámara", "Están ajustando las luces. Tienes un momento para pensar tu siguiente jugada.")
 func inyectar_carta_peligro(id_peligro):
+	# --- 🌟 ESCUDO CLÁSICO DE FORMA (ESCALADO INFINITO) ---
+	var mi_arquetipo = obtener_arquetipo_dominante()
+	var nivel_arq = Datos.perfil_actor.get(mi_arquetipo, 0)
+
+	if mi_arquetipo == "forma":
+		# Base de 25% + Tu Nivel. Topado en 90% máximo.
+		var prob_bloqueo = clamp(25 + nivel_arq, 25, 90) 
+		if randi_range(1, 100) <= prob_bloqueo:
+			escribir_log_batalla("🛡️ Disciplina Clásica: ¡Bloqueaste el ataque mental (" + str(prob_bloqueo) + "% de prob)!")
+			mostrar_alerta("🛡️ Foco Inquebrantable", "El jefe intentó estresarte, pero tu estricta disciplina técnica te protegió de la distracción.")
+			return # Cancelamos la inyección del peligro
+			
 	if contenedor_mano.get_child_count() >= 6:
 		var victima = contenedor_mano.get_child(0)
 		if is_instance_valid(victima): victima.queue_free()
@@ -2368,17 +2443,14 @@ func inyectar_carta_peligro(id_peligro):
 	btn_peligro.text = "⚠️ " + info["nombre"] + "\n(Click 4 veces para calmarte)"
 	btn_peligro.custom_minimum_size = Vector2(120, 160)
 	
-	# Variables de comportamiento insertadas en el botón
 	btn_peligro.set_meta("es_peligro", true)
 	btn_peligro.set_meta("clicks", 4)
 
-	# Animación de latido de corazón (Peligro)
 	var tween = get_tree().create_tween().set_loops()
 	btn_peligro.modulate = Color(1.0, 0.2, 0.2)
 	tween.tween_property(btn_peligro, "modulate", Color(0.4, 0.0, 0.0), 0.4)
 	tween.tween_property(btn_peligro, "modulate", Color(1.0, 0.2, 0.2), 0.4)
 
-	# Lógica al hacerle click (NO ACTIVA `jugar_carta_balasim`)
 	btn_peligro.pressed.connect(func():
 		var c = btn_peligro.get_meta("clicks") - 1
 		if c <= 0:
@@ -2387,7 +2459,6 @@ func inyectar_carta_peligro(id_peligro):
 		else:
 			btn_peligro.set_meta("clicks", c)
 			btn_peligro.text = "⚠️ " + info["nombre"] + "\n(" + str(c) + " clicks más)"
-			# Efecto tedioso pero no complejo: tiembla para dar sensación de ansiedad
 			btn_peligro.position.x += randf_range(-8, 8)
 			btn_peligro.position.y += randf_range(-8, 8)
 	)
@@ -2454,8 +2525,8 @@ func _on_btn_mulligan_pressed():
 # 🎓 APP ACADEMIA (COMPRA DE CARTAS)
 # ==========================================
 func _on_btn_app_academia_pressed():
-	contenedor_menu_inicio.visible = false
-	panel_app_academia.visible = true
+	# En lugar de abrir un panel, abrimos directamente la tienda de cartas del día
+	abrir_tienda_cartas()
 
 func _on_btn_volver_inicio_academia_pressed():
 	panel_app_academia.visible = false
@@ -2542,6 +2613,19 @@ func _input(event):
 		get_tree().reload_current_scene()
 		print("¡BOMBA NUCLEAR! Partida borrada.")
 		
+	# --- MINIJUEGO DE MESERO ---
+	if rutina_activa:
+		if (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT) or (event is InputEventKey and event.pressed and event.keycode == KEY_SPACE):
+			rutina_activa = false
+			
+			# Evaluamos si el cursor quedó dentro de la zona verde
+			var cx = cursor_barra.position.x + (cursor_barra.size.x / 2.0)
+			var zx_ini = zona_exito.position.x
+			var zx_fin = zona_exito.position.x + zona_exito.size.x
+			
+			var fue_exito = (cx >= zx_ini and cx <= zx_fin)
+			resolver_rutina_general(fue_exito)
+			return # Evitamos que haga otras cosas
 	# F11: Abrir/Cerrar Menú Admin
 	if event is InputEventKey and event.pressed and event.keycode == KEY_F11:
 		if not panel_admin_creado: crear_panel_admin()
