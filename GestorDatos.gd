@@ -7,7 +7,7 @@ var economia = {
 	"dinero": 250,
 	"deuda_bancaria": 0
 }
-
+var mercado_hoy = [] # Guarda los IDs de las 3 cartas a la venta del día
 var stats_actor = {
 	"energia_actual": 3,
 	"energia_maxima": 3,
@@ -82,6 +82,22 @@ var catalogo_cartas = {
 	"suspiro_profundo": {"nombre": "Suspiro Profundo", "rareza": "Común", "poder": 0, "efecto": "curar_estres", "valor": 10, "desc": "Inhalar, exhalar. (Cura 10 Estrés)"},
 	"tartamudeo_calculado": {"nombre": "Tartamudeo", "rareza": "Común", "poder": 3, "desc": "Te hace ver 'vulnerable'."},
 	"silencio_incomodo": {"nombre": "Silencio Incómodo", "rareza": "Común", "poder": 0, "efecto": "robar_carta", "valor": 1, "desc": "El director duda. (Robas 1 carta)"},
+	"carisma_magnetico": {
+	"nombre": "Carisma Magnético",
+	"desc": "No suma puntos directos, pero hace que toda tu actuación se vea un 50% mejor.",
+	"poder": 0,
+	"rareza": "Rara",
+	"efecto": "multiplicar_poder",
+	"valor": 1.5  # <--- Al ser 1.5, el código nuevo sabrá que debe multiplicar tus puntos x 1.5
+},
+"basura_nervios": {
+		"nombre": "Nervios", "desc": "Te resta -10 Puntos al actuar.",
+		"poder": -10, "rareza": "Peligro", "efecto": "basura", "valor": 0
+	},
+	"basura_panico": {
+		"nombre": "Ataque de Pánico", "desc": "Si sigue en tu mano al actuar, sufres +15 Estrés.",
+		"poder": 0, "rareza": "Peligro", "efecto": "basura", "valor": 0
+	},
 	"mirada_al_reloj": {"nombre": "Mirar el Reloj", "rareza": "Común", "poder": 1, "desc": "¿Ya es hora del almuerzo?"},
 	"carraspeo": {"nombre": "Carraspeo", "rareza": "Común", "poder": 2, "desc": "Afinas la garganta y el ego."},
 	"rascarse_cabeza": {"nombre": "Rascarse la Cabeza", "rareza": "Común", "poder": 1, "desc": "Inseguridad proyectada."},
@@ -250,7 +266,8 @@ var combos_balasim = {
 
 # (Recuerda mantener tu var mazo_jugador aquí abajo)
 
-var mazo_jugador = ["risa_nerviosa", "risa_nerviosa", "lagrima_falsa", "voz_profunda", "tropiezo_gracioso", "mirada_perdida", "tos_falsa"]
+var mazo_jugador = [] # Inicias sin ninguna técnica actoral
+var mazo_disponible = [] # Cartas que aún no has usado esta semana
 # El mazo inicial con el que empieza el jugador
 # Los lugares que puedes rentar. Contactos de alto nivel (Indie/Pro) 
 # se negarán a trabajar contigo si los citas en la sala de tu casa.
@@ -487,7 +504,8 @@ var eventos_matutinos = {
 # ==========================================
 func reiniciar_datos():
 	# Respetamos tus variables agregadas (reputacion, deuda, fase_dia)
-	mazo_jugador = ["risa_nerviosa", "risa_nerviosa", "lagrima_falsa", "voz_profunda"]
+	mazo_jugador = [] # El olvido total al reiniciar
+	mazo_disponible = mazo_jugador.duplicate()
 	economia = {"dinero": 250, "deuda_bancaria": 0}
 	stats_actor = {"energia_actual": 3, "energia_maxima": 3, "reputacion": 0, "seguidores": 1, "contactos": 0, "estres": 0, "ego": 0}
 	perfil_actor = {
@@ -554,3 +572,89 @@ func generar_contacto_nuevo(nivel_jugador: int, carisma_jugador: int) -> Diction
 		"influencia": influencia,
 		"afinidad": 50 
 	}
+# ==========================================
+# 💾 SISTEMA DE GUARDADO Y CARGA
+# ==========================================
+const RUTA_GUARDADO = "user://carrera_actoral.save"
+
+func guardar_partida():
+	# Metemos todas las variables importantes en un Diccionario
+	
+	var paquete_datos = {
+		"economia": economia,
+		"stats_actor": stats_actor,
+		"habilidades_actor": habilidades_actor,
+		"perfil_actor": perfil_actor,
+		"tiempo": tiempo,
+		"mazo_jugador": mazo_jugador,
+		"mazo_disponible": mazo_disponible,
+		"proyectos_activos": proyectos_activos,
+		"agenda": agenda,
+		"mercado_hoy": mercado_hoy # <--- AÑADE ESTO AQUÍ
+	}
+	
+	# Abrimos el archivo en modo ESCRITURA y guardamos en formato JSON
+	var archivo = FileAccess.open(RUTA_GUARDADO, FileAccess.WRITE)
+	if archivo:
+		var json_string = JSON.stringify(paquete_datos)
+		archivo.store_string(json_string)
+		archivo.close()
+		print("💾 Partida guardada con éxito en: ", RUTA_GUARDADO)
+
+func cargar_partida() -> bool:
+	# Verificamos si existe un archivo de guardado previo
+	
+	if not FileAccess.file_exists(RUTA_GUARDADO):
+		print("No se encontró archivo de guardado.")
+		return false
+		
+	# Abrimos en modo LECTURA
+	var archivo = FileAccess.open(RUTA_GUARDADO, FileAccess.READ)
+	if archivo:
+		var json_string = archivo.get_as_text()
+		archivo.close()
+		
+		# Convertimos el texto JSON de vuelta a variables de Godot
+		var json = JSON.new()
+		var error = json.parse(json_string)
+		
+		if error == OK:
+			var datos_cargados = json.data
+			
+			# 1. Variables Complejas (Listas y Textos)
+			mazo_jugador = datos_cargados.get("mazo_jugador", mazo_jugador)
+			mazo_disponible = datos_cargados.get("mazo_disponible", mazo_disponible)
+			proyectos_activos = datos_cargados.get("proyectos_activos", proyectos_activos)
+			# Reconstruir la agenda forzando que los días sean Números (int)
+			if datos_cargados.has("agenda"):
+				agenda.clear()
+				for llave in datos_cargados["agenda"].keys():
+					agenda[int(llave)] = datos_cargados["agenda"][llave]
+			
+			# 2. Diccionarios de Números (Forzamos a que sean Enteros)
+			if datos_cargados.has("economia"):
+				for llave in datos_cargados["economia"]: economia[llave] = int(datos_cargados["economia"][llave])
+				
+			if datos_cargados.has("stats_actor"):
+				for llave in datos_cargados["stats_actor"]: stats_actor[llave] = int(datos_cargados["stats_actor"][llave])
+				
+			if datos_cargados.has("habilidades_actor"):
+				for llave in datos_cargados["habilidades_actor"]: habilidades_actor[llave] = int(datos_cargados["habilidades_actor"][llave])
+				
+			if datos_cargados.has("perfil_actor"):
+				for llave in datos_cargados["perfil_actor"]: perfil_actor[llave] = int(datos_cargados["perfil_actor"][llave])
+				
+			if datos_cargados.has("tiempo"):
+				for llave in datos_cargados["tiempo"]: tiempo[llave] = int(datos_cargados["tiempo"][llave])
+			mercado_hoy = datos_cargados.get("mercado_hoy", mercado_hoy)
+			print("📂 Partida cargada con éxito. (Números corregidos)")
+			return true
+	
+	return false
+
+# (Opcional) Para cuando quieras borrar tu progreso
+func borrar_partida():
+	if FileAccess.file_exists(RUTA_GUARDADO):
+		var dir = DirAccess.open("user://")
+		dir.remove("carrera_actoral.save")
+		reiniciar_datos()
