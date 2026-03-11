@@ -556,8 +556,10 @@ func escribir_log_batalla(texto):
 func actualizar_ui_balasim(nombre_jefe):
 	var limite_visual = max_cartas_jugables
 	for id in seleccion_actual_ids:
+		if not Datos.catalogo_cartas.has(id):
+			continue
 		if Datos.catalogo_cartas[id].has("efecto") and Datos.catalogo_cartas[id]["efecto"] == "mas_jugadas":
-			limite_visual += Datos.catalogo_cartas[id]["valor"]
+			limite_visual += Datos.catalogo_cartas[id].get("valor", 0)
 			
 	# --- NUEVO: PREVISUALIZACIÓN ---
 	var proyeccion = calcular_puntos_proyectados()
@@ -2202,8 +2204,10 @@ func jugar_carta_balasim(boton_carta, id_carta, info_carta):
 	else:
 		var limite_actual = max_cartas_jugables
 		for id in seleccion_actual_ids:
+			if not Datos.catalogo_cartas.has(id):
+				continue
 			if Datos.catalogo_cartas[id].has("efecto") and Datos.catalogo_cartas[id]["efecto"] == "mas_jugadas":
-				limite_actual += Datos.catalogo_cartas[id]["valor"]
+				limite_actual += Datos.catalogo_cartas[id].get("valor", 0)
 				
 		if seleccion_actual_nodos.size() >= limite_actual: return 
 			
@@ -2219,6 +2223,8 @@ func calcular_puntos_proyectados() -> int:
 	var arq_jefe = casting_data_actual.get("arquetipo", "comercial")
 	
 	for id_c in seleccion_actual_ids:
+		if not Datos.catalogo_cartas.has(id_c):
+			continue
 		var info = Datos.catalogo_cartas[id_c]
 		var poder_base = info["poder"]
 		var arq_carta = info.get("arquetipo", "versatil")
@@ -2264,7 +2270,7 @@ func calcular_puntos_proyectados() -> int:
 		
 		if info.has("efecto"):
 			var ef = info["efecto"]
-			var val = float(info["valor"])
+			var val = float(info.get("valor", 0))
 			if ef == "doblar_poder_actual": multiplicador_proyectado *= 2.0
 			elif ef == "multiplicar_poder": multiplicador_proyectado *= val
 			elif ef == "escalar_carisma": puntos_proyectados += int(Datos.habilidades_actor["carisma"] * val)
@@ -2301,6 +2307,9 @@ func _on_btn_actuar_pressed():
 	var arq_jefe = casting_data_actual.get("arquetipo", "comercial")
 	
 	for id_c in seleccion_actual_ids:
+		if not Datos.catalogo_cartas.has(id_c):
+			escribir_log_batalla("⚠️ Carta inválida detectada: " + str(id_c) + ". Se omitió para evitar crash.")
+			continue
 		var info = Datos.catalogo_cartas[id_c]
 		var poder_base = info["poder"]
 		var arq_carta = info.get("arquetipo", "versatil")
@@ -2349,7 +2358,7 @@ func _on_btn_actuar_pressed():
 		
 		if info.has("efecto"):
 			var ef = info["efecto"]
-			var val = float(info["valor"])
+			var val = float(info.get("valor", 0))
 			
 			if ef == "bajar_exigencia": exigencia_director = max(1, exigencia_director - int(val))
 			elif ef == "curar_estres": Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] - int(val), 0, 100)
@@ -2439,8 +2448,8 @@ func _on_btn_actuar_pressed():
 		if robar_cartas_extra > 0: 
 			var mazo_temp = Datos.mazo_jugador.duplicate()
 			mazo_temp.shuffle()
-			for i in range(robar_cartas_extra):
-				if mazo_temp.size() > 0: crear_boton_carta_en_mesa(mazo_temp[i])
+			for i in range(min(robar_cartas_extra, mazo_temp.size())):
+				crear_boton_carta_en_mesa(mazo_temp[i])
 
 		if mulligans_restantes > 0: btn_mulligan.disabled = false
 		actualizar_ui_balasim(label_jefe.text.split("\n")[0].replace("⚔️ ", ""))
@@ -2564,6 +2573,9 @@ func repartir_mano_balasim(es_inicio):
 		cartas_vivas += 1
 
 func crear_boton_carta_en_mesa(id_c):
+	if not Datos.catalogo_cartas.has(id_c):
+		escribir_log_batalla("⚠️ No se pudo crear carta, ID inexistente: " + str(id_c))
+		return
 	var info = Datos.catalogo_cartas[id_c]
 	var btn_c = Button.new()
 	var txt_extra = ""
