@@ -132,14 +132,6 @@ var ha_publicado_hoy = false
 var ha_ido_mixer_hoy = false
 var cafes_tomados_hoy = 0 # <--- NUEVA VARIABLE DE LÍMITE
 
-const MAPA_HABILIDAD_POR_ARQUETIPO = {
-	"fisico": "expresion_corporal",
-	"forma": "tecnica_vocal",
-	"comercial": "tecnica_vocal",
-	"instinto": "carisma",
-	"metodo": "memoria"
-}
-
 var lineas_guion = [
 	{"texto": "Ser o no ser, ahí está el [___].", "correcta": "detalle", "incorrectas": ["dilema", "problema"]},
 	{"texto": "¡No puedes manejar la [___]!", "correcta": "verdad", "incorrectas": ["presión", "mentira"]},
@@ -2230,13 +2222,32 @@ func jugar_carta_balasim(boton_carta, id_carta, info_carta):
 
 	actualizar_ui_balasim(label_jefe.text.split("\n")[0].replace("⚔️ ", ""))
 
-func obtener_bono_habilidad_por_arquetipo(arq_carta: String) -> int:
-	var clave_habilidad = MAPA_HABILIDAD_POR_ARQUETIPO.get(arq_carta, "")
-	if clave_habilidad == "":
+func calcular_bono_ego_suavizado(mi_ego: int, nivel_actual: int) -> int:
+	if mi_ego < 50:
 		return 0
-	return Datos.habilidades_actor.get(clave_habilidad, 1)
+	var tramo_normal = max(0, min(mi_ego, 70) - 50)
+	var tramo_suave = max(0, mi_ego - 70)
+	var escala_nivel = 1.0 + (nivel_actual / 20.0)
+	var bono_ego = int((tramo_normal + (tramo_suave * 0.3)) * escala_nivel)
+	var cap_absoluto = int(12 + (nivel_actual / 2.0))
+	return min(bono_ego, cap_absoluto)
 
-func calcular_puntos_proyectados() -> int:
+func _hay_combo_seleccionado() -> bool:
+	if seleccion_actual_ids.size() < 2:
+		return false
+	for id_combo in Datos.combos_balasim.keys():
+		var combo = Datos.combos_balasim[id_combo]
+		if not combo.has("cartas") or combo["cartas"].size() < 2:
+			continue
+		var req1 = combo["cartas"][0]
+		var req2 = combo["cartas"][1]
+		if seleccion_actual_ids.has(req1) and seleccion_actual_ids.has(req2):
+			if req1 == req2 and seleccion_actual_ids.count(req1) < 2:
+				continue
+			return true
+	return false
+
+func calcular_puntos_proyectados() -> Dictionary:
 	var puntos_proyectados = 0
 	var multiplicador_proyectado = 1.0
 	var min_rng = 0
@@ -2260,7 +2271,11 @@ func calcular_puntos_proyectados() -> int:
 		var arq_carta = info.get("arquetipo", "versatil")
 		
 		# --- 1. BONO POR ESTADÍSTICAS DEL ACTOR ---
-		var bono_stat = obtener_bono_habilidad_por_arquetipo(arq_carta)
+		var bono_stat = 0
+		if arq_carta == "fisico": bono_stat = Datos.habilidades_actor.get("cuerpo", 1)
+		elif arq_carta == "forma" or arq_carta == "comercial": bono_stat = Datos.habilidades_actor.get("voz", 1)
+		elif arq_carta == "instinto": bono_stat = Datos.habilidades_actor.get("carisma", 1)
+		elif arq_carta == "metodo": bono_stat = Datos.habilidades_actor.get("memoria", 1)
 		
 		# Balance: Cada 5 puntos en tu habilidad te da +1 de Poder Base a la carta
 		var poder_escalado = poder_base + int(bono_stat / 5.0)
@@ -2337,7 +2352,7 @@ func calcular_puntos_proyectados() -> int:
 				break
 				
 				# --- 🌟 PODER ACTIVO DEL MÉTODO (RIESGO/RECOMPENSA) ---
-	var mi_arq = obtener_arquetipo_dominante()
+	#var mi_arq = obtener_arquetipo_dominante()
 	if mi_arq == "metodo" and Datos.stats_actor["estres"] >= 50:
 		var multiplicador_locura = 1.0 + (Datos.perfil_actor.get("metodo", 0) / 100.0)
 		multiplicador_proyectado *= multiplicador_locura
@@ -2380,7 +2395,11 @@ func _on_btn_actuar_pressed():
 		var arq_carta = info.get("arquetipo", "versatil")
 		
 		# --- 1. BONO POR ESTADÍSTICAS DEL ACTOR ---
-		var bono_stat = obtener_bono_habilidad_por_arquetipo(arq_carta)
+		var bono_stat = 0
+		if arq_carta == "fisico": bono_stat = Datos.habilidades_actor.get("cuerpo", 1)
+		elif arq_carta == "forma" or arq_carta == "comercial": bono_stat = Datos.habilidades_actor.get("voz", 1)
+		elif arq_carta == "instinto": bono_stat = Datos.habilidades_actor.get("carisma", 1)
+		elif arq_carta == "metodo": bono_stat = Datos.habilidades_actor.get("memoria", 1)
 		
 		var poder_escalado = poder_base + int(bono_stat / 5.0)
 
