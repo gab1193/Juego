@@ -449,6 +449,17 @@ var combos_balasim = {
 
 var mazo_jugador = [] # Inicias sin ninguna técnica actoral
 var mazo_disponible = [] # Cartas que aún no has usado esta semana
+var cartas_instancia = {} # id_instancia -> {"id_base","nivel","xp_actual","xp_requerida"}
+var ultimo_id_carta_instancia = 0
+const NIVEL_MAX_CARTA = 10
+var agentes_slots = ["", "", ""]
+var agentes_poseidos = []
+var catalogo_agentes = {
+	"mania_comedia": {"nombre": "🎭 Manía de Comedia", "desc": "+20% poder cartas Comerciales, +2 Exigencia por ronda.", "tipo": "build"},
+	"amuleto_memoria": {"nombre": "🧠 Amuleto de Memoria", "desc": "Si tu primera carta es Forma, recuperas +1 mulligan.", "tipo": "build"},
+	"padrino_metodo": {"nombre": "🎬 Padrino de Método", "desc": "+15% poder Método y +5% crit base.", "tipo": "contacto"},
+	"sponsor_fisico": {"nombre": "💪 Sponsor Físico", "desc": "+1 Energía al iniciar combate y +12% poder Físico.", "tipo": "build"}
+}
 # El mazo inicial con el que empieza el jugador
 # Los lugares que puedes rentar. Contactos de alto nivel (Indie/Pro) 
 # se negarán a trabajar contigo si los citas en la sala de tu casa.
@@ -714,6 +725,10 @@ func reiniciar_datos():
 	# Respetamos tus variables agregadas (reputacion, deuda, fase_dia)
 	mazo_jugador = [] # El olvido total al reiniciar
 	mazo_disponible = mazo_jugador.duplicate()
+	cartas_instancia.clear()
+	ultimo_id_carta_instancia = 0
+	agentes_slots = ["", "", ""]
+	agentes_poseidos.clear()
 	economia = {"dinero": 250, "deuda_bancaria": 0}
 	stats_actor = {"energia_actual": 3, "energia_maxima": 3, "reputacion": 0, "seguidores": 1, "contactos": 0, "estres": 0, "ego": 0}
 	perfil_actor = {
@@ -751,6 +766,109 @@ func reiniciar_datos():
 func _ready():
 	randomize()
 	normalizar_catalogo_cartas()
+	_actualizar_mazos_a_instancias()
+
+func crear_instancia_carta(id_base: String) -> String:
+	if not catalogo_cartas.has(id_base):
+		return ""
+	ultimo_id_carta_instancia += 1
+	var id_instancia = "ci_" + str(ultimo_id_carta_instancia)
+	cartas_instancia[id_instancia] = {
+		"id_base": id_base,
+		"nivel": 1,
+		"xp_actual": 0,
+		"xp_requerida": 100
+	}
+	return id_instancia
+
+func obtener_id_base_carta(id_carta) -> String:
+	if typeof(id_carta) != TYPE_STRING:
+		return ""
+	var id_txt = str(id_carta)
+	if cartas_instancia.has(id_txt):
+		return str(cartas_instancia[id_txt].get("id_base", ""))
+	return id_txt
+
+func obtener_info_carta(id_carta) -> Dictionary:
+	var id_base = obtener_id_base_carta(id_carta)
+	if not catalogo_cartas.has(id_base):
+		return {}
+	return catalogo_cartas[id_base]
+
+func obtener_nivel_carta(id_carta) -> int:
+	if cartas_instancia.has(id_carta):
+		return int(cartas_instancia[id_carta].get("nivel", 1))
+	return 1
+
+func obtener_poder_carta(id_carta) -> int:
+	var info = obtener_info_carta(id_carta)
+	if info.is_empty():
+		return 0
+	var poder_base = int(info.get("poder", 0))
+	var nivel = obtener_nivel_carta(id_carta)
+	return poder_base + max(0, nivel - 1)
+
+func otorgar_xp_carta(id_carta, xp_ganada: int):
+	if xp_ganada <= 0:
+		return
+	if not cartas_instancia.has(id_carta):
+		return
+	var data = cartas_instancia[id_carta]
+	if int(data.get("nivel", 1)) >= NIVEL_MAX_CARTA:
+		data["xp_actual"] = 0
+		cartas_instancia[id_carta] = data
+		return
+	data["xp_actual"] = int(data.get("xp_actual", 0)) + xp_ganada
+	while int(data.get("nivel", 1)) < NIVEL_MAX_CARTA and int(data.get("xp_actual", 0)) >= int(data.get("xp_requerida", 100)):
+		data["xp_actual"] -= int(data.get("xp_requerida", 100))
+		data["nivel"] = int(data.get("nivel", 1)) + 1
+		data["xp_requerida"] = 100 + ((int(data.get("nivel", 1)) - 1) * 40)
+	if int(data.get("nivel", 1)) >= NIVEL_MAX_CARTA:
+		data["nivel"] = NIVEL_MAX_CARTA
+		data["xp_actual"] = 0
+	data["xp_requerida"] = 100 + ((int(data.get("nivel", 1)) - 1) * 40)
+	cartas_instancia[id_carta] = data
+
+func contar_cartas_por_base(id_base: String) -> int:
+	var c = 0
+	for id_inst in mazo_jugador:
+		if obtener_id_base_carta(id_inst) == id_base:
+			c += 1
+	return c
+
+func obtener_instancias_por_base(id_base: String, solo_disponibles := false) -> Array:
+	var salida = []
+	var fuente = mazo_jugador
+	if solo_disponibles:
+		fuente = mazo_disponible
+	for id_inst in fuente:
+		if obtener_id_base_carta(id_inst) == id_base:
+			salida.append(id_inst)
+	return salida
+
+func _actualizar_mazos_a_instancias():
+	if mazo_jugador.is_empty():
+		return
+	var requiere_migracion = false
+	for id_c in mazo_jugador:
+		if not str(id_c).begins_with("ci_"):
+			requiere_migracion = true
+			break
+	if not requiere_migracion:
+		return
+	var nuevo_mazo = []
+	var nuevo_disponible = []
+	for id_base in mazo_jugador:
+		var inst = crear_instancia_carta(str(id_base))
+		if inst != "":
+			nuevo_mazo.append(inst)
+	for id_base in mazo_disponible:
+		for id_inst in nuevo_mazo:
+			if not nuevo_disponible.has(id_inst) and obtener_id_base_carta(id_inst) == str(id_base):
+				nuevo_disponible.append(id_inst)
+				break
+	mazo_jugador = nuevo_mazo
+	mazo_disponible = nuevo_disponible
 
 var nombres_npc = ["Juan", "María", "Carlos", "Ana", "Luis", "Elena", "Pedro", "Sofía", "Diego", "Laura", "Mónica", "Raúl"]
 var apellidos_npc = ["Pérez", "Gómez", "López", "Díaz", "Martínez", "García", "Ruiz", "Hernández"]
@@ -802,6 +920,10 @@ func guardar_partida():
 		"tiempo": tiempo,
 		"mazo_jugador": mazo_jugador,
 		"mazo_disponible": mazo_disponible,
+		"cartas_instancia": cartas_instancia,
+		"ultimo_id_carta_instancia": ultimo_id_carta_instancia,
+		"agentes_slots": agentes_slots,
+		"agentes_poseidos": agentes_poseidos,
 		"proyectos_activos": proyectos_activos,
 		"agenda": agenda,
 		"mercado_hoy": mercado_hoy, # <--- AÑADE ESTO AQUÍ
@@ -839,6 +961,10 @@ func cargar_partida() -> bool:
 			# 1. Variables Complejas (Listas y Textos)
 			mazo_jugador = datos_cargados.get("mazo_jugador", mazo_jugador)
 			mazo_disponible = datos_cargados.get("mazo_disponible", mazo_disponible)
+			cartas_instancia = datos_cargados.get("cartas_instancia", cartas_instancia)
+			ultimo_id_carta_instancia = int(datos_cargados.get("ultimo_id_carta_instancia", ultimo_id_carta_instancia))
+			agentes_slots = datos_cargados.get("agentes_slots", agentes_slots)
+			agentes_poseidos = datos_cargados.get("agentes_poseidos", agentes_poseidos)
 			proyectos_activos = datos_cargados.get("proyectos_activos", proyectos_activos)
 			# Reconstruir la agenda forzando que los días sean Números (int)
 			if datos_cargados.has("agenda"):
@@ -863,6 +989,7 @@ func cargar_partida() -> bool:
 				for llave in datos_cargados["tiempo"]: tiempo[llave] = int(datos_cargados["tiempo"][llave])
 			mercado_hoy = datos_cargados.get("mercado_hoy", mercado_hoy)
 			temporada_actual = datos_cargados.get("temporada_actual", temporada_actual)
+			_actualizar_mazos_a_instancias()
 			print("📂 Partida cargada con éxito. (Números corregidos)")
 			return true
 	
