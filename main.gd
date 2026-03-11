@@ -400,14 +400,14 @@ func iniciar_skill_check(tipo):
 			var arq = casting_data_actual.get("arquetipo", "comercial")
 			var es_funcion = (tipo == "funcion")
 			
-			# ¡DIFICULTAD BALANCEADA! (Para que no pidan 114 en nivel 1)
-			if nivel_req == 1: base_exigencia = randi_range(15, 25)
-			elif nivel_req == 2: base_exigencia = randi_range(35, 50)
-			elif nivel_req >= 3: base_exigencia = randi_range(70, 95)
+			# ¡FÓRMULA INFINITA! Base 15 pts por cada nivel del casting
+			base_exigencia = (nivel_req * 15) + randi_range(10, 25)
 			
 			if es_funcion: 
-				base_exigencia = int(base_exigencia * 1.5) # Escalado más justo
-				rondas_restantes = 4
+				base_exigencia = int(base_exigencia * 2.0)
+				# Te damos 1 ronda extra por cada 5 niveles para compensar batallas largas
+				rondas_restantes = 4 + int(nivel_req / 5.0) 
+			
 			exigencia_director = base_exigencia
 			# (El resto de nombres de jefes por arquetipo déjalos igual...)
 		elif tipo == "ensayo_cast" or tipo == "funcion":
@@ -470,7 +470,28 @@ func iniciar_skill_check(tipo):
 			robar_extra_instinto = 1 + int(nivel_arq / 25.0)
 			escribir_log_batalla("⚡ Mente Rápida (Instinto): Robarás " + str(robar_extra_instinto) + " carta(s) extra este turno.")
 		actualizar_ui_balasim(nombre_jefe)
+		# 1. Repartimos la mano inicial normalmente
 		repartir_mano_balasim(true)
+		
+		# --- 👑 CASTIGO DE EGO (Pérdida de opciones) ---
+		var mi_ego = Datos.stats_actor.get("ego", 0)
+		if mi_ego >= 60:
+			var mulligans_perdidos = int(mi_ego / 20.0)
+			mulligans_restantes = max(0, mulligans_restantes - mulligans_perdidos)
+			escribir_log_batalla("👑 Actitud de Diva: Pierdes " + str(mulligans_perdidos) + " Redibujos.")
+			mostrar_texto_flotante("👑 Diva: -" + str(mulligans_perdidos) + " Redibujos", btn_mulligan, Color.RED) # <--- NUEVO
+
+		# --- 💥 CASTIGO DE ESTRÉS (El Jefe huele tu miedo) ---
+		var mi_estres = Datos.stats_actor.get("estres", 0)
+		if mi_estres >= 50:
+			var cartas_panico_iniciales = int(mi_estres / 30.0) 
+			escribir_log_batalla("💥 Mente Frágil: El estrés te sabotea desde el inicio.")
+			mostrar_texto_flotante("💥 Mente Frágil: Sabotaje Inicial", label_jefe, Color.PURPLE) # <--- NUEVO
+			
+			var llaves_peligro = ["nervios", "panico"]
+			for i in range(cartas_panico_iniciales):
+				inyectar_carta_peligro(llaves_peligro.pick_random())
+			
 		
 		# Aplicamos el poder de robo extra del Instinto
 		if robar_extra_instinto > 0:
@@ -870,6 +891,7 @@ func _on_boton_dormir_pressed():
 		mostrar_alerta("¡FALTA GRAVE!", "No fuiste a tu llamado. El director está furioso.")
 		reducir_seguidores(10)
 		publicar_auto("Cometí un error terrible en el trabajo hoy. Solo quiero dormir y desaparecer. 😞")
+		
 	# Chequeo de colapso mental antes de dormir
 	if Datos.stats_actor["estres"] >= 100:
 		aplicar_burnout()
@@ -880,22 +902,37 @@ func _on_boton_dormir_pressed():
 	cafes_tomados_hoy = 0 # El sueño resetea tu tolerancia a la cafeína
 	Datos.estado_actual = "normal"
 	Datos.tiempo["dia"] += 1
+	
 	# --- REINICIO SEMANAL DE CARTAS ---
 	if Datos.tiempo["dia"] % 7 == 1: # Si es día 8, 15, 22, 29...
 		Datos.mazo_disponible = Datos.mazo_jugador.duplicate()
 		mostrar_alerta("🗓️ Inicio de Semana", "¡Has descansado y recuperado la inspiración!\nTodas las cartas que usaste la semana pasada han vuelto a tu Mazo Disponible.")
-	# La energía máxima ya no es fija, escala con tu estadística de Cuerpo
+		
 	# Actualizamos tu energía usando tu propia función base
 	recalcular_stats_pasivos()
 	Datos.stats_actor["energia_actual"] = Datos.stats_actor["energia_maxima"]
-	Datos.economia["dinero"] -= 15 
 	
+	# ==========================================
+	# 📦 CREACIÓN DEL MENSAJE MATUTINO
+	# ==========================================
 	var mensaje_matutino = ""
+	
+	# --- COSTO DE ESTILO DE VIDA ---
+	# Empieza en $15, pero sube $5 por cada nivel que tengas
+	var costo_vida = 10 + (Datos.habilidades_actor["nivel_general"] * 5)
+	Datos.economia["dinero"] -= costo_vida
+	
+	# Le avisamos al jugador si le cobraron mucho
+	if Datos.habilidades_actor["nivel_general"] >= 5:
+		mensaje_matutino += "Costo de Vida (Nivel " + str(Datos.habilidades_actor["nivel_general"]) + "): -$" + str(costo_vida) + "\n\n" 
+	
+	# --- ALERTA BANCARIA (Si estás en números rojos) ---
 	if Datos.economia["dinero"] < 0:
 		var interes = int(abs(Datos.economia["dinero"]) * 0.1)
 		if interes < 10: interes = 10
 		Datos.economia["dinero"] -= interes
-		mensaje_matutino = "⚠️ ALERTA BANCARIA:\nEl banco te cobró -$" + str(interes) + " por intereses."
+		mensaje_matutino += "⚠️ ALERTA BANCARIA:\nEl banco te cobró -$" + str(interes) + " por intereses.\n"
+	# ==========================================
 	
 	var ingresos_redes = 0
 	if Datos.stats_actor["seguidores"] >= 100:
@@ -904,6 +941,7 @@ func _on_boton_dormir_pressed():
 	
 	generar_castings_del_dia()
 	generar_mercado_diario()
+	
 	var dia_nuevo = Datos.tiempo["dia"]
 	if Datos.agenda.has(Datos.tiempo["dia"]) and Datos.agenda[Datos.tiempo["dia"]] == "Pago_Renta":
 		# ¡NUEVA LÓGICA DE RENTA DOBLE!
@@ -926,40 +964,33 @@ func _on_boton_dormir_pressed():
 		# --- EVENTOS DINÁMICOS POR EGO Y ESTRÉS ---
 		var evento_disparado = false
 		
-		# 1. Estrés Nivel Crítico (>= 80) - Enfermedad
 		if Datos.stats_actor["estres"] >= 80 and randi_range(1, 100) <= 50:
 			mostrar_alerta("🤒 Enfermedad por Estrés", "Tus defensas bajaron por tanta presión. Tienes fiebre y tuviste que comprar medicinas.\n\nPerdiste -$40 y amaneces con solo 1 de Energía.")
 			Datos.economia["dinero"] -= 40
 			Datos.stats_actor["energia_actual"] = 1
 			evento_disparado = true
-			
-		# 2. Estrés Alto (>= 60) - Ansiedad Social
 		elif Datos.stats_actor["estres"] >= 60 and randi_range(1, 100) <= 40 and not evento_disparado:
 			mostrar_alerta("💢 Ataque de Ansiedad", "Tu estrés está muy alto. Le gritaste a un fan en la calle que te pidió una foto por culpa de los nervios.\n\nPerdiste -20 Seguidores.")
 			reducir_seguidores(20)
 			evento_disparado = true
-			
-		# 3. Estrés Medio (>= 40) - Insomnio
 		elif Datos.stats_actor["estres"] >= 40 and randi_range(1, 100) <= 30 and not evento_disparado:
 			mostrar_alerta("🥱 Insomnio Severo", "El estrés no te dejó dormir anoche. Estuviste repasando diálogos y pensando en el fracaso hasta las 4 AM.\n\nPierdes -1 de Energía para tu día de hoy.")
 			Datos.stats_actor["energia_actual"] = max(0, Datos.stats_actor["energia_actual"] - 1)
 			evento_disparado = true
-			
-		# 2. Chequeo de Ego Alto (Diva)
 		elif Datos.stats_actor["ego"] >= 70 and randi_range(1, 100) <= 40 and not evento_disparado:
 			mostrar_alerta("👑 Escándalo de Diva", "Tu ego te domina. Exigiste lujos ridículos en un evento y la prensa se enteró.\n\nPagaste -$80 en 'relaciones públicas' pero ganaste +10 de Seguidores por el morbo.")
 			Datos.economia["dinero"] -= 80
 			sumar_seguidores(10)
 			evento_disparado = true
 			
-		# 3. Flujo Normal (Si no pasó nada malo)
 		if not evento_disparado:
 			if mensaje_matutino != "": mostrar_alerta("Buzón de Cobro", mensaje_matutino) 
 			elif randi_range(1, 100) <= 30: disparar_evento_aleatorio()
 			elif ingresos_redes > 0: mostrar_alerta("💸 Monetización SimGram", "Ganaste: +$" + str(ingresos_redes))
 	
 	actualizar_interfaz()
-# --- AUTO-GUARDADO AL FINALIZAR EL DÍA ---
+	
+	# --- AUTO-GUARDADO AL FINALIZAR EL DÍA ---
 	Datos.guardar_partida()
 	mostrar_alerta("💤 Día Finalizado", "Has descansado. Tu progreso ha sido guardado automáticamente.")
 	
@@ -968,8 +999,12 @@ func comprobar_level_up():
 	while Datos.habilidades_actor["xp_actual"] >= Datos.habilidades_actor["xp_requerida"]:
 		Datos.habilidades_actor["xp_actual"] -= Datos.habilidades_actor["xp_requerida"] 
 		Datos.habilidades_actor["nivel_general"] += 1
-		Datos.habilidades_actor["xp_requerida"] += 100 
+		
+		# --- NUEVO: ESCALADO EXPONENCIAL ---
+		# Cada nivel cuesta un 40% más que el anterior
+		Datos.habilidades_actor["xp_requerida"] = int(Datos.habilidades_actor["xp_requerida"] * 1.4) 
 		subio_nivel = true
+		
 	if subio_nivel: panel_level_up.visible = true
 
 func aplicar_stat_y_cerrar():
@@ -1019,26 +1054,31 @@ func generar_castings_del_dia():
 		var id_base = todas_las_llaves[i]
 		var base_casting = Datos.castings_disponibles[id_base].duplicate()
 		
+		# --- NUEVO: ESCALADO INFINITO ---
+		var mi_nivel = Datos.habilidades_actor["nivel_general"]
+		# El casting será de tu nivel, un nivel menos, o hasta 2 niveles más difícil
+		var nivel_generado = max(1, randi_range(mi_nivel - 1, mi_nivel + 2))
+		
+		base_casting["nivel_minimo"] = nivel_generado
+		base_casting["seguidores_minimos"] = nivel_generado * randi_range(40, 80)
+		base_casting["paga"] = nivel_generado * randi_range(30, 60)
+		base_casting["recompensa_xp"] = nivel_generado * randi_range(40, 70)
+		
 		var titulo_especifico = GestorTextos.generar_titulo_produccion(id_base)
 		base_casting["papel"] = GestorTextos.generar_papel_produccion(id_base) 
-		base_casting["titulo_unico"] = base_casting["titulo"] + "\n" + titulo_especifico
+		# Le agregamos el Nivel al título para que se vea genial
+		base_casting["titulo_unico"] = base_casting["titulo"] + " [Nv." + str(nivel_generado) + "]\n" + titulo_especifico
 		base_casting["id_unico"] = id_base + "_dia" + str(Datos.tiempo["dia"]) + "_" + str(i)
 		base_casting["rendimiento_acumulado"] = 0
 		base_casting["hype_generado"] = 0
 		
-		# --- ASIGNACIÓN DEFINITIVA DE ARQUETIPO (5 EJES) ---
-		if "corto" in id_base or "pelicula" in id_base or "drama" in id_base:
-			base_casting["arquetipo"] = "metodo"
-		elif "extra" in id_base or "accion" in id_base or "danza" in id_base:
-			base_casting["arquetipo"] = "fisico"
-		elif "teatro" in id_base or "obra" in id_base or "doblaje" in id_base or "locutor" in id_base:
-			base_casting["arquetipo"] = "forma"
-		elif "comercial" in id_base or "conduccion" in id_base:
-			base_casting["arquetipo"] = "comercial"
-		elif "standup" in id_base or "animador" in id_base or "impro" in id_base:
-			base_casting["arquetipo"] = "instinto"
-		else:
-			base_casting["arquetipo"] = "comercial" # Por defecto
+		# Asignación de arquetipo
+		if "corto" in id_base or "pelicula" in id_base or "drama" in id_base: base_casting["arquetipo"] = "metodo"
+		elif "extra" in id_base or "accion" in id_base or "danza" in id_base: base_casting["arquetipo"] = "fisico"
+		elif "teatro" in id_base or "obra" in id_base or "doblaje" in id_base or "locutor" in id_base: base_casting["arquetipo"] = "forma"
+		elif "comercial" in id_base or "conduccion" in id_base: base_casting["arquetipo"] = "comercial"
+		elif "standup" in id_base or "animador" in id_base or "impro" in id_base: base_casting["arquetipo"] = "instinto"
+		else: base_casting["arquetipo"] = "comercial" 
 			
 		castings_de_hoy.append(base_casting)
 
@@ -2044,15 +2084,15 @@ func _on_btn_app_mazo_pressed():
 		
 		var separador = HSeparator.new()
 		vbox.add_child(separador)
+		
 		# --- BOTÓN DE OLVIDAR TÉCNICA ---
 		var btn_vender = Button.new()
 		btn_vender.text = "🗑️ Olvidar Técnica (+$25)"
-		btn_vender.modulate = Color(1.0, 0.5, 0.5) # Color rojo suave
+		btn_vender.modulate = Color(1.0, 0.5, 0.5) 
 		btn_vender.pressed.connect(intentar_vender_carta.bind(id_carta))
 		vbox.add_child(btn_vender)
 		
-		panel_carta.add_child(vbox) # <--- (Esta línea ya la tienes, va justo después)
-		contenedor_lista_mazo.add_child(panel_carta) # <--- (Esta también ya la tienes)
+		# ¡OJO AQUÍ! Estas dos líneas SOLO DEBEN ESTAR ESCRITAS UNA VEZ
 		panel_carta.add_child(vbox)
 		contenedor_lista_mazo.add_child(panel_carta)
 
@@ -2181,7 +2221,20 @@ func calcular_puntos_proyectados() -> int:
 		
 		# Balance: Cada 5 puntos en tu habilidad te da +1 de Poder Base a la carta
 		var poder_escalado = poder_base + int(bono_stat / 5.0)
-
+# --- 👑 EGO ESCALABLE INFINITO (Proyección) ---
+		var mi_ego = Datos.stats_actor.get("ego", 0)
+		var nivel_actual = Datos.habilidades_actor.get("nivel_general", 1)
+		
+		if mi_ego >= 50:
+			var bono_ego = int((mi_ego - 50) * (1.0 + (nivel_actual / 10.0)))
+			poder_escalado += bono_ego
+			mostrar_texto_flotante("👑 Ego: +" + str(bono_ego), label_jefe, Color(1, 0.8, 0.2))
+		# --- 💥 PROYECCIÓN DE ESTRÉS (Promedio) ---
+		var mi_estres = Datos.stats_actor.get("estres", 0)
+		if mi_estres >= 40:
+			# Como el crítico es al azar (RNG), proyectamos un multiplicador promedio para no mentirle al jugador
+			var prob_critico = mi_estres / 200.0 # Ej: 50% = 0.25 extra promedio
+			multiplicador_proyectado *= (1.0 + prob_critico)
 		# --- 2. MULTIPLICADOR POR DEBILIDAD DEL JEFE ---
 		var multi_tipo = 1.0
 		if arq_jefe == "metodo" and arq_carta == "instinto": multi_tipo = 1.5
@@ -2222,20 +2275,18 @@ func calcular_puntos_proyectados() -> int:
 		multiplicador_proyectado *= multiplicador_locura
 	return int(puntos_proyectados * multiplicador_proyectado)
 func _on_btn_actuar_pressed():
-	# Contamos cuántas cartas REALES tienes en la mano (que no estén a punto de borrarse)
 	var cartas_vivas = 0
 	for hijo in contenedor_mano.get_children():
 		if not hijo.is_queued_for_deletion() and hijo is Button:
 			cartas_vivas += 1
 			
 	if seleccion_actual_nodos.is_empty() and cartas_vivas > 0: 
-		return # Si tienes cartas en la mano, debes seleccionar al menos 1
+		return
 		
 	var puntos_ronda = 0
 	var multiplicador_ronda = 1.0
 	var robar_cartas_extra = 0
 	
-	# 1. EJECUTAR PODERES Y EFECTOS
 	var arq_jefe = casting_data_actual.get("arquetipo", "comercial")
 	
 	for id_c in seleccion_actual_ids:
@@ -2251,6 +2302,24 @@ func _on_btn_actuar_pressed():
 		elif arq_carta == "metodo": bono_stat = Datos.habilidades_actor.get("memoria", 1)
 		
 		var poder_escalado = poder_base + int(bono_stat / 5.0)
+
+		# --- 👑 EGO ESCALABLE INFINITO (Bono de Presencia) ---
+		var mi_ego = Datos.stats_actor.get("ego", 0)
+		var nivel_actual = Datos.habilidades_actor.get("nivel_general", 1)
+		
+		if mi_ego >= 50:
+			var bono_ego = int((mi_ego - 50) * (1.0 + (nivel_actual / 10.0)))
+			poder_escalado += bono_ego
+			mostrar_texto_flotante("👑 Ego: +" + str(bono_ego), label_jefe, Color(1, 0.8, 0.2))
+		
+		# --- 💥 ESTRÉS (Crítico de Actuación Visceral) ---
+		var mi_estres = Datos.stats_actor.get("estres", 0)
+		if mi_estres >= 40:
+			var prob_critico = int(mi_estres / 2.0)
+			if randi_range(1, 100) <= prob_critico:
+				poder_escalado *= 2 
+				escribir_log_batalla("💥 ¡ACTUACIÓN EXPLOSIVA! El estrés duplicó el poder de tu carta: " + info["nombre"])
+				mostrar_texto_flotante("💥 ¡CRÍTICO!", label_jefe, Color(1, 0.2, 0.2), 1.5)
 		
 		# --- 2. MULTIPLICADOR POR DEBILIDAD DEL JEFE ---
 		var multi_tipo = 1.0
@@ -2281,6 +2350,12 @@ func _on_btn_actuar_pressed():
 			elif ef == "sacrificar_energia":
 				if Datos.stats_actor["energia_actual"] >= val: Datos.stats_actor["energia_actual"] -= int(val)
 				else: puntos_ronda -= info["poder"] 
+				
+	# --- 🌟 PODER ACTIVO DEL MÉTODO (RIESGO/RECOMPENSA) ---
+	var mi_arq = obtener_arquetipo_dominante()
+	if mi_arq == "metodo" and Datos.stats_actor.get("estres", 0) >= 50:
+		var multiplicador_locura = 1.0 + (Datos.perfil_actor.get("metodo", 0) / 100.0)
+		multiplicador_ronda *= multiplicador_locura
 	
 	# 2. BUSCAR COMBOS
 	var texto_combo = ""
@@ -2295,15 +2370,82 @@ func _on_btn_actuar_pressed():
 				multiplicador_ronda *= combo["multiplicador"]
 				texto_combo += combo["nombre_combo"] + "\n"
 				break
-	# --- 🌟 PODER ACTIVO DEL MÉTODO (RIESGO/RECOMPENSA) ---
-	var mi_arq = obtener_arquetipo_dominante()
-	if mi_arq == "metodo" and Datos.stats_actor["estres"] >= 50:
-		var multiplicador_locura = 1.0 + (Datos.perfil_actor.get("metodo", 0) / 100.0)
-		multiplicador_ronda *= multiplicador_locura
+	
 	var puntos_finales = int(puntos_ronda * multiplicador_ronda)
 	poder_acumulado_turno += puntos_finales
 	
+	# --- SUPER FEEDBACK VISUAL ---
+	var texto_daño = "🎭 +" + str(puntos_finales) + " Pts!"
+	var color_daño = Color.GREEN
+	var escala_daño = 1.0
+	
+	if texto_combo != "":
+		color_daño = Color.CYAN
+		escala_daño = 1.5
+		mostrar_texto_flotante("🔥 ¡COMBO!", barra_exigencia, Color.ORANGE, 1.5)
+		
+	mostrar_texto_flotante(texto_daño, barra_exigencia, color_daño, escala_daño)
+	
 	# LOG DE BATALLA Y COMBOS
+	escribir_log_batalla("🎭 Actuaste. Generaste " + str(puntos_finales) + " puntos.")
+	if texto_combo != "": escribir_log_batalla("🔥 COMBO ACTIVADO: " + texto_combo.replace("\n", " "))
+	
+	# --- CASTIGO DE CARTAS DE PELIGRO EN MANO ---
+	for hijo in contenedor_mano.get_children():
+		if not hijo.is_queued_for_deletion() and not hijo in seleccion_actual_nodos:
+			if "Pánico" in hijo.text or hijo.has_meta("es_peligro"):
+				Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] + 15, 0, 100)
+				mostrar_alerta("💥 Pánico Acumulado", "No lidiaste con tu Ataque de Pánico. (+15 Estrés)")
+				
+	# 3. QUEMAR CARTAS Y LIMPIAR MESA
+	for id_c in seleccion_actual_ids:
+		Datos.mazo_disponible.erase(id_c) 
+		
+	for nodo in seleccion_actual_nodos:
+		if is_instance_valid(nodo): nodo.queue_free()
+	seleccion_actual_nodos.clear()
+	seleccion_actual_ids.clear()
+	
+	# 4. RESOLUCIÓN DE LA RONDA
+	if poder_acumulado_turno >= exigencia_director:
+		panel_balasim.visible = false
+		resolver_rutina_general(true)
+		return
+		
+	rondas_restantes -= 1
+	if rondas_restantes <= 0:
+		panel_balasim.visible = false
+		resolver_rutina_general(false)
+	else:
+		ejecutar_accion_jefe() 
+		repartir_mano_balasim(false) 
+		
+		if robar_cartas_extra > 0: 
+			var mazo_temp = Datos.mazo_jugador.duplicate()
+			mazo_temp.shuffle()
+			for i in range(robar_cartas_extra):
+				if mazo_temp.size() > 0: crear_boton_carta_en_mesa(mazo_temp[i])
+
+		if mulligans_restantes > 0: btn_mulligan.disabled = false
+		actualizar_ui_balasim(label_jefe.text.split("\n")[0].replace("⚔️ ", ""))
+		poder_acumulado_turno += puntos_finales
+
+ # --- SUPER FEEDBACK VISUAL ---
+ var texto_daño = "🎭 +" + str(puntos_finales) + " Pts!"
+ var color_daño = Color.GREEN
+ var escala_daño = 1.0
+
+ if texto_combo != "":
+ 	color_daño = Color.CYAN
+ 	escala_daño = 1.5
+ 	mostrar_texto_flotante("🔥 ¡COMBO!", barra_exigencia, Color.ORANGE, 1.5)
+		
+
+
+ mostrar_texto_flotante(texto_daño, barra_exigencia, color_daño, escala_daño)
+
+ # LOG DE BATALLA Y COMBOS
+ # ... (El resto de tu código igual)
 	escribir_log_batalla("🎭 Actuaste. Generaste " + str(puntos_finales) + " puntos.")
 	if texto_combo != "": escribir_log_batalla("🔥 COMBO ACTIVADO: " + texto_combo.replace("\n", " "))
 	
@@ -2347,92 +2489,55 @@ func _on_btn_actuar_pressed():
 		actualizar_ui_balasim(label_jefe.text.split("\n")[0].replace("⚔️ ", ""))
 # --- EL JEFE SE DEFIENDE (IA DINÁMICA + SABOTAJE MENTAL) ---
 func ejecutar_accion_jefe():
-	var progreso = float(poder_acumulado_turno) / float(exigencia_director)
-	var arquetipo_jefe = casting_data_actual.get("arquetipo", "comercial")
+	var jefe = casting_data_actual.get("arquetipo", "comercial")
+	var nivel_casting = casting_data_actual.get("nivel_minimo", 1)
+	var accion_tomada = ""
+	var color_accion = Color.WHITE
 	
-	# Si no es un casting, le damos un arquetipo genérico
-	if tipo_rutina == "trabajo": arquetipo_jefe = "fisico"
-	elif tipo_rutina == "ensayo_casa": arquetipo_jefe = "metodo"
+	# El aumento base ahora escala con el NIVEL DEL CASTING
+	var aumento_base = randi_range(3, 8) + int(nivel_casting * 3.5)
 	
-	var nombre_entidad = "El Jefe"
-	if tipo_rutina == "casting_real" or tipo_rutina == "ensayo_cast": nombre_entidad = "El Director"
-	elif tipo_rutina == "funcion": nombre_entidad = "El Público"
-	elif tipo_rutina == "trabajo": nombre_entidad = "El Cliente"
-	elif tipo_rutina == "ensayo_casa": nombre_entidad = "Tu Impostor"
-
-	# --- IA: DECISIÓN BASADA EN EL PROGRESO ---
-	if progreso >= 0.8:
-		var subida = randi_range(10, 20)
-		exigencia_director += subida
-		mostrar_alerta("🔥 " + nombre_entidad + " se pone EXIGENTE", "Saben que lo tienes dominado y deciden probarte al límite. (+" + str(subida) + " pts exigidos)")
-		return
-
-	# --- IA: DECISIÓN POR ARQUETIPO ---
-	var accion = randi_range(1, 100)
-	
-	if arquetipo_jefe == "fisico":
-		if accion <= 50:
-			var subida = randi_range(5, 12)
-			exigencia_director += subida
-			mostrar_alerta("📈 Desgaste Físico", nombre_entidad + " te pide repetir la escena con más intensidad. (+" + str(subida) + " pts)")
-		elif accion <= 80:
-			# NUEVO: Sabotaje Mental
-			mostrar_alerta("🧠 Dudas", nombre_entidad + " te intimida físicamente. Tu mente se llena de Nervios.")
-			inyectar_carta_peligro("basura_nervios")
-		else:
-			mostrar_alerta("⏱️ Silencio Físico", nombre_entidad + " te observa sudar. Espera más de ti.")
-			
-	elif arquetipo_jefe == "metodo":
-		if accion <= 40:
-			Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] + 12, 0, 100)
-			mostrar_alerta("💢 Destrucción Psicológica", nombre_entidad + " cuestiona tu talento y te hace dudar. (+12 Estrés)")
-		elif accion <= 70 and mulligans_restantes > 0:
+	if jefe == "comercial" or jefe == "fisico":
+		exigencia_director += aumento_base
+		accion_tomada = "📈 ¡Corte! Ponle más energía (+ " + str(aumento_base) + " Exigencia)"
+		color_accion = Color(1.0, 0.4, 0.4) # Rojo
+		
+	elif jefe == "metodo" or jefe == "instinto":
+		var estres_dmg = randi_range(5, 10) + int(nivel_casting / 2.0)
+		Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] + estres_dmg, 0, 100)
+		accion_tomada = "💢 ¡No me lo creo! (Daño mental: +" + str(estres_dmg) + " Estrés)"
+		color_accion = Color(0.8, 0.2, 0.8) # Morado
+		
+	elif jefe == "forma":
+		if mulligans_restantes > 0 and randi_range(1, 100) <= 50:
 			mulligans_restantes -= 1
-			mostrar_alerta("🚫 Confusión Mental", nombre_entidad + " te grita que olvides tus trucos. (-1 Acción de Redibujar)")
-		elif accion <= 90:
-			# NUEVO: Sabotaje Mental Extremo
-			mostrar_alerta("😱 Presión Extrema", "Sientes la presión del método en tu contra. Entras en Pánico.")
-			inyectar_carta_peligro("basura_panico")
+			accion_tomada = "🚫 ¡Te apegas al guion! (-1 Redibujar)"
+			color_accion = Color(0.9, 0.9, 0.2) # Amarillo
 		else:
-			mostrar_alerta("⏱️ Silencio de Método", nombre_entidad + " clava su mirada en tu alma en absoluto silencio...")
+			exigencia_director += aumento_base
+			accion_tomada = "📉 ¡Más técnica! (+ " + str(aumento_base) + " Exigencia)"
+			color_accion = Color(1.0, 0.4, 0.4)
 			
-	elif arquetipo_jefe == "forma":
-		if progreso < 0.3 and accion <= 50:
-			Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] + 15, 0, 100)
-			mostrar_alerta("📜 Rigurosidad Clásica", nombre_entidad + " se ofende por tu falta de técnica. (+15 Estrés)")
-		elif accion <= 80:
-			exigencia_director += 8
-			mostrar_alerta("📈 Corrección de Dicción", "Te piden que repitas la línea con una mejor proyección. (+8 pts)")
-		elif accion <= 95:
-			mostrar_alerta("🧠 Crítica Duda", "Te critican la postura y pierdes el enfoque. Te llenas de Nervios.")
-			inyectar_carta_peligro("basura_nervios")
-		else:
-			mostrar_alerta("⏱️ Pausa Clásica", nombre_entidad + " revisa sus notas con desaprobación.")
-			
-	else: # Comercial / Instinto 
-		if accion <= 30:
-			exigencia_director += randi_range(3, 8)
-			mostrar_alerta("📈 Petición Comercial", "Te piden que lo hagas 'más alegre y vendible'. La meta sube un poco.")
-		elif accion <= 60:
-			Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] + 8, 0, 100)
-			mostrar_alerta("💢 Presión de Set", "El tiempo es dinero. Te apresuran y te pones nervioso. (+8 Estrés)")
-		elif accion <= 85:
-			mostrar_alerta("😱 Imprevisto", "Cambian el guion a última hora. ¡Entras en Pánico!")
-			inyectar_carta_peligro("basura_panico")
-		else:
-			mostrar_alerta("⏱️ Tiempo de Cámara", "Están ajustando las luces. Tienes un momento para pensar tu siguiente jugada.")
+	# --- VISUAL FEEDBACK Y SABOTAJES ---
+	escribir_log_batalla("🎬 El Director (" + jefe.capitalize() + ") interviene: " + accion_tomada)
+	mostrar_texto_flotante(accion_tomada, label_jefe, color_accion, 1.2)
+	
+	# Sabotajes escalares: En niveles altos, el jefe tira basura más seguido
+	var prob_sabotaje = clamp(15 + (nivel_casting * 2), 15, 60)
+	if randi_range(1, 100) <= prob_sabotaje:
+		var llaves_peligro = ["nervios", "panico"]
+		inyectar_carta_peligro(llaves_peligro.pick_random())
 func inyectar_carta_peligro(id_peligro):
 	# --- 🌟 ESCUDO CLÁSICO DE FORMA (ESCALADO INFINITO) ---
 	var mi_arquetipo = obtener_arquetipo_dominante()
 	var nivel_arq = Datos.perfil_actor.get(mi_arquetipo, 0)
 
 	if mi_arquetipo == "forma":
-		# Base de 25% + Tu Nivel. Topado en 90% máximo.
 		var prob_bloqueo = clamp(25 + nivel_arq, 25, 90) 
 		if randi_range(1, 100) <= prob_bloqueo:
 			escribir_log_batalla("🛡️ Disciplina Clásica: ¡Bloqueaste el ataque mental (" + str(prob_bloqueo) + "% de prob)!")
 			mostrar_alerta("🛡️ Foco Inquebrantable", "El jefe intentó estresarte, pero tu estricta disciplina técnica te protegió de la distracción.")
-			return # Cancelamos la inyección del peligro
+			return
 			
 	if contenedor_mano.get_child_count() >= 6:
 		var victima = contenedor_mano.get_child(0)
@@ -2446,7 +2551,12 @@ func inyectar_carta_peligro(id_peligro):
 	btn_peligro.set_meta("es_peligro", true)
 	btn_peligro.set_meta("clicks", 4)
 
-	var tween = get_tree().create_tween().set_loops()
+	# --- CORRECCIÓN DEL BUCLE INFINITO ---
+	# 1. PRIMERO metemos la carta a la pantalla
+	contenedor_mano.add_child(btn_peligro) 
+
+	# 2. LUEGO creamos la animación y la atamos al botón (bind_node)
+	var tween = get_tree().create_tween().bind_node(btn_peligro).set_loops()
 	btn_peligro.modulate = Color(1.0, 0.2, 0.2)
 	tween.tween_property(btn_peligro, "modulate", Color(0.4, 0.0, 0.0), 0.4)
 	tween.tween_property(btn_peligro, "modulate", Color(1.0, 0.2, 0.2), 0.4)
@@ -2459,10 +2569,10 @@ func inyectar_carta_peligro(id_peligro):
 		else:
 			btn_peligro.set_meta("clicks", c)
 			btn_peligro.text = "⚠️ " + info["nombre"] + "\n(" + str(c) + " clicks más)"
-			btn_peligro.position.x += randf_range(-8, 8)
-			btn_peligro.position.y += randf_range(-8, 8)
+			# Un pequeño temblor al darle click
+			btn_peligro.position.x += randf_range(-5, 5)
+			btn_peligro.position.y += randf_range(-5, 5)
 	)
-	contenedor_mano.add_child(btn_peligro)
 	escribir_log_batalla("💥 El Jefe saboteó tu mente con: " + info["nombre"])
 # --- REPARTIDOR DE CARTAS ---
 # --- REPARTIDOR DE CARTAS ---
@@ -2663,20 +2773,55 @@ func crear_panel_admin():
 	nodo_panel_admin.add_child(vbox)
 	$CapaUI.add_child(nodo_panel_admin)
 # ==========================================
-# 🛒 MERCADO ROTATIVO DE CARTAS
+# 🛒 MERCADO ROTATIVO ESCALABLE (NIVELES)
 # ==========================================
 func generar_mercado_diario():
 	Datos.mercado_hoy.clear()
-	var todas_las_cartas = Datos.catalogo_cartas.keys()
-	todas_las_cartas.shuffle()
+	var mi_nivel = Datos.habilidades_actor.get("nivel_general", 1)
 	
-	# Elegimos 3 cartas al azar que no sean la "Basura" del jefe
-	var agregadas = 0
-	for id in todas_las_cartas:
-		if Datos.catalogo_cartas[id].get("efecto", "") != "basura":
-			Datos.mercado_hoy.append(id)
-			agregadas += 1
-		if agregadas >= 3: break
+	# 1. Separar el catálogo por rarezas (Excluyendo basura)
+	var comunes = []; var raras = []; var epicas = []; var legendarias = []
+	for id in Datos.catalogo_cartas.keys():
+		var info = Datos.catalogo_cartas[id]
+		if info.get("efecto", "") == "basura": continue
+		
+		if info["rareza"] == "Común": comunes.append(id)
+		elif info["rareza"] == "Rara": raras.append(id)
+		elif info["rareza"] == "Épica": epicas.append(id)
+		elif info["rareza"] == "Legendaria": legendarias.append(id)
+
+	# 2. Generar 3 cartas basadas en las probabilidades de tu Nivel
+	for i in range(3):
+		var azar = randi_range(1, 100)
+		var pool_elegido = comunes
+		
+		if mi_nivel <= 3:
+			# Nivel 1-3 (Principiante): 80% Comunes, 20% Raras
+			if azar > 80: pool_elegido = raras
+			
+		elif mi_nivel <= 8:
+			# Nivel 4-8 (Intermedio): 40% Comunes, 50% Raras, 10% Épicas
+			if azar <= 40: pool_elegido = comunes
+			elif azar <= 90: pool_elegido = raras
+			else: pool_elegido = epicas
+			
+		elif mi_nivel <= 15:
+			# Nivel 9-15 (Avanzado): 20% Comunes, 50% Raras, 25% Épicas, 5% Legendarias
+			if azar <= 20: pool_elegido = comunes
+			elif azar <= 70: pool_elegido = raras
+			elif azar <= 95: pool_elegido = epicas
+			else: pool_elegido = legendarias
+			
+		else:
+			# Nivel 16+ (Maestro/Infinito): 0% Comunes, 40% Raras, 40% Épicas, 20% Legendarias
+			if azar <= 40: pool_elegido = raras
+			elif azar <= 80: pool_elegido = epicas
+			else: pool_elegido = legendarias
+			
+		# Por si acaso algún pool se vacía o hay error, siempre hay comunes de repuesto
+		if pool_elegido.is_empty(): pool_elegido = comunes
+		
+		Datos.mercado_hoy.append(pool_elegido.pick_random())
 func abrir_tienda_cartas():
 	var dialog = AcceptDialog.new()
 	dialog.title = "🎓 Academia: Nuevas Técnicas"
@@ -2696,6 +2841,12 @@ func abrir_tienda_cartas():
 		btn_comprar.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		
 		btn_comprar.pressed.connect(func():
+			# --- NUEVO: LÍMITE DE MAZO ---
+			var limite_mazo = 15 + int(Datos.habilidades_actor["memoria"] / 2.0)
+			if Datos.mazo_jugador.size() >= limite_mazo:
+				mostrar_alerta("🧠 Mente Saturada", "Tu mazo está al límite (" + str(limite_mazo) + " cartas).\nVe a la App 'Mi Mazo' y olvida (vende) técnicas viejas para aprender nuevas.")
+				return
+				
 			if Datos.economia["dinero"] >= precio:
 				Datos.economia["dinero"] -= precio
 				Datos.mazo_jugador.append(id_c)
@@ -2704,7 +2855,7 @@ func abrir_tienda_cartas():
 				btn_comprar.disabled = true
 				btn_comprar.text = "¡Técnica Aprendida!"
 				actualizar_interfaz()
-				mostrar_alerta("🎓 Éxito", "Has añadido '" + info["nombre"] + "' a tu mazo.")
+				mostrar_alerta("🎓 Éxito", "Has añadido '" + info["nombre"] + "' a tu mazo. (" + str(Datos.mazo_jugador.size()) + "/" + str(limite_mazo) + ")")
 			else:
 				mostrar_alerta("💸 Sin fondos", "No tienes dinero suficiente.")
 		)
@@ -2734,3 +2885,26 @@ func intentar_vender_carta(id_carta):
 	dialog.canceled.connect(func(): dialog.queue_free())
 	add_child(dialog)
 	dialog.popup_centered()
+# ==========================================
+# 🎈 SISTEMA DE TEXTOS FLOTANTES (GAME FEEL)
+# ==========================================
+func mostrar_texto_flotante(texto: String, nodo_origen: Control, color: Color = Color.WHITE, escala: float = 1.0):
+	if not is_instance_valid(nodo_origen) or not panel_balasim.visible: return
+	
+	var lbl = Label.new()
+	lbl.text = texto
+	lbl.add_theme_font_size_override("font_size", int(18 * escala))
+	lbl.add_theme_color_override("font_color", color)
+	lbl.add_theme_color_override("font_outline_color", Color.BLACK)
+	lbl.add_theme_constant_override("outline_size", 4)
+	
+	# Posicionar justo en el centro del nodo que lo genera
+	lbl.position = nodo_origen.global_position + (nodo_origen.size / 2.0) - Vector2(20, 20)
+	panel_balasim.add_child(lbl)
+	
+	# Animación de flotar y desvanecerse
+	var tween = get_tree().create_tween()
+	var pos_final = lbl.position + Vector2(randf_range(-30, 30), -80) # Sube flotando
+	tween.tween_property(lbl, "position", pos_final, 1.2).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
+	tween.parallel().tween_property(lbl, "modulate:a", 0.0, 1.2).set_delay(0.2)
+	tween.tween_callback(lbl.queue_free)
