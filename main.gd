@@ -64,6 +64,7 @@ var exigencia_director = 0
 var cartas_jugadas_turno = 0
 var max_cartas_jugables = 2
 var cartas_jugadas_ids = [] # <--- NUEVO: Guarda el ID para buscar combos
+var resolviendo_balasim = false # Evita doble click / re-entradas en resolución de ronda
 
 # --- REFERENCIAS CONTACTOS Y BOOK ---
 @onready var panel_app_contactos = $CapaUI/PanelSimPhone/PanelAppContactos
@@ -148,6 +149,8 @@ func _ready():
 		print("El jugador continuó su carrera.")
 	else:
 		print("Nueva partida iniciada.")
+	# --- NORMALIZACIÓN DE CARTAS (balance + arquetipos) ---
+	Datos.normalizar_catalogo_cartas()
 		
 	actualizar_interfaz() # Refrescamos la UI con los datos cargados
 	# -----------------------------------
@@ -161,6 +164,8 @@ func _ready():
 	panel_app_redes.visible = false
 	panel_app_tienda.visible = false
 	panel_evento_matutino.visible = false
+	panel_evento_matutino.z_as_relative = false
+	panel_evento_matutino.z_index = 200
 	panel_minijuego.visible = false
 	panel_confirmacion.visible = false
 	panel_rutina.visible = false 
@@ -444,6 +449,9 @@ func iniciar_skill_check(tipo):
 
 		# --- 2. CONFIGURACIÓN DE BATALLA Y UI ---
 		poder_acumulado_turno = Datos.habilidades_actor["carisma"] * 2 
+		poder_total_encuentro = poder_acumulado_turno
+		resolviendo_balasim = false
+		btn_actuar.disabled = false
 		seleccion_actual_nodos.clear()
 		seleccion_actual_ids.clear()
 		max_cartas_jugables = 2 + int(Datos.habilidades_actor["expresion_corporal"] / 2) 
@@ -1080,6 +1088,15 @@ func obtener_stat_arquetipo(arq_carta: String) -> int:
 	elif arq_carta == "metodo":
 		return Datos.habilidades_actor.get("memoria", 1)
 	return 1
+
+func _formatear_arquetipo_carta(arq: String) -> String:
+	match arq:
+		"metodo": return "Método"
+		"fisico": return "Físico"
+		"forma": return "Forma"
+		"comercial": return "Comercial"
+		"instinto": return "Instinto"
+		_: return "Versátil"
 
 func obtener_penalizacion_repeticion_turno(arquetipos_usados: Dictionary, arq_carta: String) -> float:
 	var repeticiones = arquetipos_usados.get(arq_carta, 0)
@@ -2131,7 +2148,8 @@ func _on_btn_app_mazo_pressed():
 			elif info_carta["rareza"] == "Épica": lbl_titulo.modulate = Color(0.8, 0.2, 1.0)
 		
 		var lbl_stats = Label.new()
-		lbl_stats.text = "⭐ Poder: " + str(info_carta["poder"]) + " | Rareza: " + info_carta["rareza"]
+		var arq_txt = _formatear_arquetipo_carta(info_carta.get("arquetipo", "versatil"))
+		lbl_stats.text = "⭐ Poder: " + str(info_carta["poder"]) + " | Rareza: " + info_carta["rareza"] + " | Arquetipo: " + arq_txt
 		
 		var lbl_desc = Label.new()
 		lbl_desc.text = "«" + info_carta["desc"] + "»"
@@ -2147,7 +2165,8 @@ func _on_btn_app_mazo_pressed():
 		
 		# --- BOTÓN DE OLVIDAR TÉCNICA ---
 		var btn_vender = Button.new()
-		btn_vender.text = "🗑️ Olvidar Técnica (+$25)"
+		var precio_reventa = Datos.calcular_precio_reventa_carta(id_carta)
+		btn_vender.text = "🗑️ Olvidar Técnica (+$" + str(precio_reventa) + ")"
 		btn_vender.modulate = Color(1.0, 0.5, 0.5) 
 		btn_vender.pressed.connect(intentar_vender_carta.bind(id_carta))
 		vbox.add_child(btn_vender)
@@ -2407,12 +2426,21 @@ func calcular_puntos_proyectados() -> Dictionary:
 		"hay_rng_critico": hay_rng_critico
 	}
 func _on_btn_actuar_pressed():
+	if resolviendo_balasim: return
+	resolviendo_balasim = true
+	btn_actuar.disabled = true
+	if is_instance_valid(btn_mulligan): btn_mulligan.disabled = true
+
 	var cartas_vivas = 0
 	for hijo in contenedor_mano.get_children():
 		if not hijo.is_queued_for_deletion() and hijo is Button:
 			cartas_vivas += 1
 			
 	if seleccion_actual_nodos.is_empty() and cartas_vivas > 0: 
+		btn_actuar.disabled = false
+		if is_instance_valid(btn_mulligan) and mulligans_restantes > 0:
+			btn_mulligan.disabled = false
+		resolviendo_balasim = false
 		return
 		
 	var puntos_ronda = 0
@@ -2538,6 +2566,7 @@ func _on_btn_actuar_pressed():
 	
 	var puntos_finales = int(puntos_ronda * multiplicador_ronda)
 	poder_acumulado_turno += puntos_finales
+	poder_total_encuentro = poder_acumulado_turno
 	
 	# --- SUPER FEEDBACK VISUAL ---
 	var texto_daño = "🎭 +" + str(puntos_finales) + " Pts!"
@@ -2556,11 +2585,16 @@ func _on_btn_actuar_pressed():
 	if texto_combo != "": escribir_log_batalla("🔥 COMBO ACTIVADO: " + texto_combo.replace("\n", " "))
 	
 	# --- CASTIGO DE CARTAS DE PELIGRO EN MANO ---
+	var panico_count = 0
 	for hijo in contenedor_mano.get_children():
 		if not hijo.is_queued_for_deletion() and not hijo in seleccion_actual_nodos:
 			if "Pánico" in hijo.text or hijo.has_meta("es_peligro"):
-				Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] + 15, 0, 100)
-				mostrar_alerta("💥 Pánico Acumulado", "No lidiaste con tu Ataque de Pánico. (+15 Estrés)")
+				panico_count += 1
+	if panico_count > 0:
+		var dmg_panico = 15 * panico_count
+		Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] + dmg_panico, 0, 100)
+		escribir_log_batalla("💥 Pánico acumulado: +" + str(dmg_panico) + " Estrés por " + str(panico_count) + " carta(s).")
+		mostrar_texto_flotante("💥 +" + str(dmg_panico) + " Estrés", label_jefe, Color(1, 0.3, 0.3), 1.1)
 				
 	# 3. QUEMAR CARTAS Y LIMPIAR MESA
 	for id_c in seleccion_actual_ids:
@@ -2573,14 +2607,12 @@ func _on_btn_actuar_pressed():
 	
 	# 4. RESOLUCIÓN DE LA RONDA
 	if poder_acumulado_turno >= exigencia_director:
-		panel_balasim.visible = false
-		resolver_rutina_general(true)
+		_finalizar_balasim(true)
 		return
 		
 	rondas_restantes -= 1
 	if rondas_restantes <= 0:
-		panel_balasim.visible = false
-		resolver_rutina_general(false)
+		_finalizar_balasim(false)
 	else:
 		ejecutar_accion_jefe() 
 		repartir_mano_balasim(false) 
@@ -2593,6 +2625,21 @@ func _on_btn_actuar_pressed():
 
 		if mulligans_restantes > 0: btn_mulligan.disabled = false
 		actualizar_ui_balasim(label_jefe.text.split("\n")[0].replace("⚔️ ", ""))
+		btn_actuar.disabled = false
+		resolviendo_balasim = false
+
+func _finalizar_balasim(fue_exito: bool):
+	panel_balasim.visible = false
+	# Limpieza defensiva para evitar referencias colgantes
+	for nodo in seleccion_actual_nodos:
+		if is_instance_valid(nodo) and not nodo.is_queued_for_deletion():
+			nodo.queue_free()
+	seleccion_actual_nodos.clear()
+	seleccion_actual_ids.clear()
+	if is_instance_valid(btn_mulligan): btn_mulligan.disabled = true
+	btn_actuar.disabled = false
+	resolviendo_balasim = false
+	call_deferred("resolver_rutina_general", fue_exito)
 # --- EL JEFE SE DEFIENDE (IA DINÁMICA + SABOTAJE MENTAL) ---
 func ejecutar_accion_jefe():
 	var jefe = casting_data_actual.get("arquetipo", "comercial")
@@ -2718,9 +2765,10 @@ func crear_boton_carta_en_mesa(id_c):
 		return
 	var info = Datos.catalogo_cartas[id_c]
 	var btn_c = Button.new()
-	var txt_extra = ""
-	if info.has("efecto"): txt_extra = "\n✨ Especial"
-	btn_c.text = info["nombre"] + "\n⭐ " + str(info["poder"]) + txt_extra
+	var arq_txt = _formatear_arquetipo_carta(info.get("arquetipo", "versatil"))
+	var linea = "⭐ " + str(info["poder"]) + " | " + arq_txt
+	if info.has("efecto"): linea += " ✨"
+	btn_c.text = info["nombre"] + "\n" + linea
 	btn_c.custom_minimum_size = Vector2(120, 160)
 	btn_c.pressed.connect(jugar_carta_balasim.bind(btn_c, id_c, info))
 	contenedor_mano.add_child(btn_c)
@@ -2743,6 +2791,65 @@ func _on_btn_mulligan_pressed():
 # ==========================================
 # 🎓 APP ACADEMIA (COMPRA DE CARTAS)
 # ==========================================
+func _obtener_pools_cartas_por_rareza() -> Dictionary:
+	var pools = {"Común": [], "Rara": [], "Épica": [], "Legendaria": []}
+	for id in Datos.catalogo_cartas.keys():
+		var info = Datos.catalogo_cartas[id]
+		if info.get("efecto", "") == "basura": continue
+		var rareza = info.get("rareza", "Común")
+		if pools.has(rareza):
+			pools[rareza].append(id)
+	return pools
+
+func _pesos_base_por_nivel(nivel: int) -> Dictionary:
+	var t = clamp((nivel - 1) / 20.0, 0.0, 1.0)
+	return {
+		"Común": lerp(70.0, 35.0, t),
+		"Rara": lerp(25.0, 40.0, t),
+		"Épica": lerp(5.0, 20.0, t),
+		"Legendaria": lerp(0.0, 5.0, t)
+	}
+
+func _ajustar_pesos_por_curso(pesos_base: Dictionary, tipo_curso: String) -> Dictionary:
+	var pesos = pesos_base.duplicate()
+	if tipo_curso == "basico":
+		pesos["Común"] *= 1.4
+		pesos["Rara"] *= 0.9
+		pesos["Épica"] *= 0.5
+		pesos["Legendaria"] *= 0.2
+	elif tipo_curso == "medio":
+		pesos["Común"] *= 1.1
+		pesos["Rara"] *= 1.0
+		pesos["Épica"] *= 0.8
+		pesos["Legendaria"] *= 0.4
+	elif tipo_curso == "pro":
+		pesos["Común"] *= 0.8
+		pesos["Rara"] *= 1.1
+		pesos["Épica"] *= 1.3
+		pesos["Legendaria"] *= 0.7
+	return pesos
+
+func _elegir_rareza_por_pesos(pesos: Dictionary) -> String:
+	var total = 0.0
+	for v in pesos.values(): total += float(v)
+	if total <= 0.0: return "Común"
+	var r = randf() * total
+	var acum = 0.0
+	for rareza in ["Común", "Rara", "Épica", "Legendaria"]:
+		acum += float(pesos.get(rareza, 0))
+		if r <= acum: return rareza
+	return "Común"
+
+func _elegir_carta_por_rareza(pools: Dictionary, rareza: String) -> String:
+	var orden_fallback = ["Legendaria", "Épica", "Rara", "Común"]
+	var idx = orden_fallback.find(rareza)
+	if idx == -1: idx = 3
+	for i in range(idx, orden_fallback.size()):
+		var r = orden_fallback[i]
+		if pools.has(r) and not pools[r].is_empty():
+			return pools[r].pick_random()
+	return pools["Común"].pick_random()
+
 func _on_btn_app_academia_pressed():
 	# En lugar de abrir un panel, abrimos directamente la tienda de cartas del día
 	abrir_tienda_cartas()
@@ -2755,41 +2862,34 @@ func comprar_curso(tipo_curso):
 	var costo = 0
 	var costo_energia = 0
 	var cartas_ganadas = []
-	# 1. Separar el catálogo por rarezas para el RNG
-	var cat_comunes = []; var cat_raras = []; var cat_epicas = []; var cat_legendarias = []
-	for id in Datos.catalogo_cartas.keys():
-		var rareza = Datos.catalogo_cartas[id]["rareza"]
-		if rareza == "Común": cat_comunes.append(id)
-		elif rareza == "Rara": cat_raras.append(id)
-		elif rareza == "Épica": cat_epicas.append(id)
-		elif rareza == "Legendaria": cat_legendarias.append(id)
-		
+	# 1. Separar el catálogo por rarezas para el RNG (excluye basura)
+	var pools = _obtener_pools_cartas_por_rareza()
+	var nivel = Datos.habilidades_actor.get("nivel_general", 1)
+	
 	# 2. Definir Costos y Recompensas según el curso
 	if tipo_curso == "basico":
 		costo = 50; costo_energia = 1
 		if comprobar_pago_clase(costo, costo_energia):
-			cartas_ganadas.append(cat_comunes.pick_random())
-			cartas_ganadas.append(cat_comunes.pick_random())
-			cartas_ganadas.append(cat_comunes.pick_random())
-			cartas_ganadas.append(cat_raras.pick_random())
+			var pesos = _ajustar_pesos_por_curso(_pesos_base_por_nivel(nivel), "basico")
+			for i in range(4):
+				var rareza = _elegir_rareza_por_pesos(pesos)
+				cartas_ganadas.append(_elegir_carta_por_rareza(pools, rareza))
 			
 	elif tipo_curso == "medio":
 		costo = 250; costo_energia = 2
 		if comprobar_pago_clase(costo, costo_energia):
-			cartas_ganadas.append(cat_raras.pick_random())
-			cartas_ganadas.append(cat_raras.pick_random())
-			# 30% de Épica, si no, otra Rara
-			if randi_range(1, 100) <= 30: cartas_ganadas.append(cat_epicas.pick_random())
-			else: cartas_ganadas.append(cat_raras.pick_random())
+			var pesos = _ajustar_pesos_por_curso(_pesos_base_por_nivel(nivel), "medio")
+			for i in range(3):
+				var rareza = _elegir_rareza_por_pesos(pesos)
+				cartas_ganadas.append(_elegir_carta_por_rareza(pools, rareza))
 			
 	elif tipo_curso == "pro":
 		costo = 1000; costo_energia = 3
 		if comprobar_pago_clase(costo, costo_energia):
-			cartas_ganadas.append(cat_epicas.pick_random())
-			cartas_ganadas.append(cat_epicas.pick_random())
-			# 10% de Legendaria directa, si no, otra Épica
-			if randi_range(1, 100) <= 10: cartas_ganadas.append(cat_legendarias.pick_random())
-			else: cartas_ganadas.append(cat_epicas.pick_random())
+			var pesos = _ajustar_pesos_por_curso(_pesos_base_por_nivel(nivel), "pro")
+			for i in range(3):
+				var rareza = _elegir_rareza_por_pesos(pesos)
+				cartas_ganadas.append(_elegir_carta_por_rareza(pools, rareza))
 			
 	# 3. Entregar las cartas al jugador
 	if cartas_ganadas.size() > 0:
@@ -2887,50 +2987,16 @@ func crear_panel_admin():
 func generar_mercado_diario():
 	Datos.mercado_hoy.clear()
 	var mi_nivel = Datos.habilidades_actor.get("nivel_general", 1)
-	
-	# 1. Separar el catálogo por rarezas (Excluyendo basura)
-	var comunes = []; var raras = []; var epicas = []; var legendarias = []
-	for id in Datos.catalogo_cartas.keys():
-		var info = Datos.catalogo_cartas[id]
-		if info.get("efecto", "") == "basura": continue
-		
-		if info["rareza"] == "Común": comunes.append(id)
-		elif info["rareza"] == "Rara": raras.append(id)
-		elif info["rareza"] == "Épica": epicas.append(id)
-		elif info["rareza"] == "Legendaria": legendarias.append(id)
 
-	# 2. Generar 3 cartas basadas en las probabilidades de tu Nivel
+	# 1. Pools por rareza (excluye basura)
+	var pools = _obtener_pools_cartas_por_rareza()
+	# 2. Pesos dinámicos por nivel (mantiene comunes para fomentar crafteo)
+	var pesos = _pesos_base_por_nivel(mi_nivel)
+
+	# 3. Generar 3 cartas basadas en las probabilidades del nivel
 	for i in range(3):
-		var azar = randi_range(1, 100)
-		var pool_elegido = comunes
-		
-		if mi_nivel <= 3:
-			# Nivel 1-3 (Principiante): 80% Comunes, 20% Raras
-			if azar > 80: pool_elegido = raras
-			
-		elif mi_nivel <= 8:
-			# Nivel 4-8 (Intermedio): 40% Comunes, 50% Raras, 10% Épicas
-			if azar <= 40: pool_elegido = comunes
-			elif azar <= 90: pool_elegido = raras
-			else: pool_elegido = epicas
-			
-		elif mi_nivel <= 15:
-			# Nivel 9-15 (Avanzado): 20% Comunes, 50% Raras, 25% Épicas, 5% Legendarias
-			if azar <= 20: pool_elegido = comunes
-			elif azar <= 70: pool_elegido = raras
-			elif azar <= 95: pool_elegido = epicas
-			else: pool_elegido = legendarias
-			
-		else:
-			# Nivel 16+ (Maestro/Infinito): 0% Comunes, 40% Raras, 40% Épicas, 20% Legendarias
-			if azar <= 40: pool_elegido = raras
-			elif azar <= 80: pool_elegido = epicas
-			else: pool_elegido = legendarias
-			
-		# Por si acaso algún pool se vacía o hay error, siempre hay comunes de repuesto
-		if pool_elegido.is_empty(): pool_elegido = comunes
-		
-		Datos.mercado_hoy.append(pool_elegido.pick_random())
+		var rareza = _elegir_rareza_por_pesos(pesos)
+		Datos.mercado_hoy.append(_elegir_carta_por_rareza(pools, rareza))
 func abrir_tienda_cartas():
 	var dialog = AcceptDialog.new()
 	dialog.title = "🎓 Academia: Nuevas Técnicas"
@@ -2943,7 +3009,7 @@ func abrir_tienda_cartas():
 	for id_c in Datos.mercado_hoy:
 		var info = Datos.catalogo_cartas[id_c]
 		var btn_comprar = Button.new()
-		var precio = info.get("poder", 10) * 5 + 50 # El precio escala según lo buena que sea
+		var precio = Datos.calcular_precio_compra_carta(id_c)
 		
 		btn_comprar.text = "Comprar: " + info["nombre"] + " ($" + str(precio) + ")\n" + info["desc"]
 		btn_comprar.custom_minimum_size = Vector2(250, 60)
@@ -2978,14 +3044,15 @@ func intentar_vender_carta(id_carta):
 	var info = Datos.catalogo_cartas[id_carta]
 	var dialog = ConfirmationDialog.new()
 	dialog.title = "🗑️ Olvidar Técnica"
-	dialog.dialog_text = "¿Deseas olvidar la técnica '" + info["nombre"] + "'?\n\nRecuperarás $25 y limpiarás tu mazo para que salgan mejores combos en batalla."
-	dialog.get_ok_button().text = "Vender ($25)"
+	dialog.dialog_text = "¿Deseas olvidar la técnica '" + info["nombre"] + "'?\n\nRecuperarás $" + str(Datos.calcular_precio_reventa_carta(id_carta)) + " y limpiarás tu mazo para que salgan mejores combos en batalla."
+	var precio_reventa = Datos.calcular_precio_reventa_carta(id_carta)
+	dialog.get_ok_button().text = "Vender ($" + str(precio_reventa) + ")"
 	dialog.get_cancel_button().text = "Cancelar"
 	
 	dialog.confirmed.connect(func():
 		Datos.mazo_jugador.erase(id_carta)
 		if Datos.mazo_disponible.has(id_carta): Datos.mazo_disponible.erase(id_carta)
-		Datos.economia["dinero"] += 25
+		Datos.economia["dinero"] += precio_reventa
 		actualizar_interfaz()
 		mostrar_alerta("🗑️ Mazo Limpio", "Has olvidado la técnica. Tu mazo ahora es más eficiente.")
 		# NOTA: Cierra y vuelve a abrir tu panel del mazo para ver los cambios
