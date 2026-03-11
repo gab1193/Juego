@@ -196,6 +196,7 @@ func _ready():
 	
 	generar_castings_del_dia()
 	recalcular_stats_pasivos()
+	_programar_siguiente_renta()
 	actualizar_interfaz()
 	dibujar_feed_redes()
 # Llenamos el mazo disponible si el juego acaba de abrir
@@ -256,7 +257,8 @@ func recalcular_stats_pasivos():
 	
 
 func actualizar_interfaz():
-	label_dia.text = "Día: " + str(Datos.tiempo["dia"])
+	var cal = _calendario_desde_dia_abs(Datos.tiempo["dia"])
+	label_dia.text = str(cal["nombre_dia"]) + " " + str(cal["dia_mes"]) + " de " + str(cal["nombre_mes"]) + " (Día " + str(Datos.tiempo["dia"]) + ")"
 	label_dinero.text = "Dinero: $" + str(Datos.economia["dinero"])
 	if Datos.economia["dinero"] < 0: label_dinero.modulate = Color(1.0, 0.2, 0.2)
 	else: label_dinero.modulate = Color(1.0, 1.0, 1.0)
@@ -375,6 +377,30 @@ func actualizar_interfaz():
 		btn_llamado.visible = false; btn_trabajar.visible = true; btn_ensayar.visible = true
 		
 	comprobar_bancarrota()
+
+func _calendario_desde_dia_abs(dia_abs: int) -> Dictionary:
+	var d = max(1, dia_abs)
+	var dia_sem = int((d - 1) % 7)
+	var dia_mes = int((d - 1) % DIAS_POR_MES) + 1
+	var idx_mes = int(((d - 1) / DIAS_POR_MES) % NOMBRES_MESES.size())
+	var mes_num = int(((d - 1) / DIAS_POR_MES)) + 1
+	return {
+		"dia_semana": dia_sem,
+		"nombre_dia": NOMBRES_DIA_SEMANA[dia_sem],
+		"dia_mes": dia_mes,
+		"mes_idx": idx_mes,
+		"mes_num": mes_num,
+		"nombre_mes": NOMBRES_MESES[idx_mes]
+	}
+
+func _programar_siguiente_renta():
+	var cal = _calendario_desde_dia_abs(Datos.tiempo["dia"])
+	var faltan = (DIAS_POR_MES - int(cal["dia_mes"])) + 1
+	var proximo = Datos.tiempo["dia"] + faltan
+	for k in Datos.agenda.keys():
+		if Datos.agenda[k] == "Pago_Renta" and k != proximo:
+			Datos.agenda.erase(k)
+	Datos.agenda[proximo] = "Pago_Renta"
 
 func comprobar_bancarrota():
 	if Datos.economia["dinero"] <= -1000:
@@ -1188,7 +1214,8 @@ func _on_boton_dormir_pressed():
 	generar_mercado_diario()
 	
 	var dia_nuevo = Datos.tiempo["dia"]
-	if Datos.agenda.has(Datos.tiempo["dia"]) and Datos.agenda[Datos.tiempo["dia"]] == "Pago_Renta":
+	var cal_nuevo = _calendario_desde_dia_abs(dia_nuevo)
+	if dia_nuevo > 1 and int(cal_nuevo["dia_mes"]) == 1:
 		# ¡NUEVA LÓGICA DE RENTA DOBLE!
 		var espacio_id = Datos.mi_compania["id_espacio_actual"]
 		var renta_espacio = Datos.espacios_disponibles[espacio_id]["renta_mensual"]
@@ -1204,7 +1231,9 @@ func _on_boton_dormir_pressed():
 		
 		Datos.economia["dinero"] -= renta_total
 		mostrar_alerta("Día de Renta", texto_renta)
-		Datos.agenda[Datos.tiempo["dia"] + 30] = "Pago_Renta"
+		if Datos.agenda.has(Datos.tiempo["dia"]) and Datos.agenda[Datos.tiempo["dia"]] == "Pago_Renta":
+			Datos.agenda.erase(Datos.tiempo["dia"])
+		_programar_siguiente_renta()
 	else:
 		# --- EVENTOS DINÁMICOS POR EGO Y ESTRÉS ---
 		var evento_disparado = false
@@ -1232,6 +1261,7 @@ func _on_boton_dormir_pressed():
 			if mensaje_matutino != "": mostrar_alerta("Buzón de Cobro", mensaje_matutino) 
 			elif randi_range(1, 100) <= 30: disparar_evento_aleatorio()
 			elif ingresos_redes > 0: mostrar_alerta("💸 Monetización SimGram", "Ganaste: +$" + str(ingresos_redes))
+		_programar_siguiente_renta()
 	
 	actualizar_interfaz()
 	
@@ -1277,11 +1307,12 @@ func _on_btn_app_agenda_pressed():
 	panel_app_agenda.visible = true
 	for hijo in grid_calendario.get_children(): hijo.queue_free()
 	var dia_actual = Datos.tiempo["dia"]
-	var bloque_mes = int((dia_actual - 1) / 30) * 30 
+	var bloque_mes = int((dia_actual - 1) / DIAS_POR_MES) * DIAS_POR_MES 
 	var dia_inicio = bloque_mes + 1
-	for i in range(dia_inicio, dia_inicio + 30):
+	for i in range(dia_inicio, dia_inicio + DIAS_POR_MES):
 		var btn_dia = Button.new() 
-		btn_dia.text = str(i)
+		var cal = _calendario_desde_dia_abs(i)
+		btn_dia.text = str(cal["nombre_dia"]).substr(0, 3) + "\n" + str(cal["dia_mes"])
 		btn_dia.custom_minimum_size = Vector2(45, 45)
 		if i < dia_actual: btn_dia.modulate = Color(0.4, 0.4, 0.4) 
 		elif i == dia_actual: btn_dia.modulate = Color(1.0, 0.9, 0.2) 
@@ -1658,6 +1689,9 @@ func abrir_confirmacion_casting(index):
 	var val_book = _validar_requisitos_book(c)
 	if not val_book["ok"]:
 		mostrar_alerta("📖 Book insuficiente", "No puedes audicionar aún.\nTe falta: " + str(val_book["faltan"]))
+		return
+	if Datos.habilidades_actor.get("nivel_general", 1) < int(c.get("nivel_minimo", 1)):
+		mostrar_alerta("Nivel insuficiente", "Este casting exige nivel " + str(c.get("nivel_minimo", 1)) + " y actualmente eres nivel " + str(Datos.habilidades_actor.get("nivel_general", 1)) + ".")
 		return
 	
 	if Datos.stats_actor["seguidores"] < c["seguidores_minimos"]:
@@ -2573,6 +2607,53 @@ func obtener_arquetipo_dominante() -> String:
 # ==========================================
 # 🃏 APP: MI MAZO DE ACTUACIÓN (BALASIM)
 # ==========================================
+func _costo_restaurar_instancia(id_inst: String) -> int:
+	var info = Datos.obtener_info_carta(id_inst)
+	if info.is_empty():
+		return 0
+	var nivel = Datos.obtener_nivel_carta(id_inst)
+	var rareza = str(info.get("rareza", "Común"))
+	var base = 20
+	if rareza == "Rara": base = 40
+	elif rareza == "Épica": base = 75
+	elif rareza == "Legendaria": base = 140
+	return int(base + (nivel - 1) * (base * 0.25))
+
+func _instancias_agotadas_por_base(id_base: String) -> Array:
+	var out = []
+	for id_i in Datos.obtener_instancias_por_base(id_base, false):
+		if not Datos.mazo_disponible.has(id_i):
+			out.append(id_i)
+	return out
+
+func restaurar_instancias(ids: Array):
+	if ids.is_empty():
+		mostrar_alerta("Sin cartas agotadas", "No hay cartas para restaurar.")
+		return
+	var costo = 0
+	for id_i in ids:
+		costo += _costo_restaurar_instancia(id_i)
+	if Datos.economia["dinero"] < costo:
+		mostrar_alerta("Sin fondos", "Necesitas $" + str(costo) + " para restaurar esas cartas.")
+		return
+	Datos.economia["dinero"] -= costo
+	for id_i in ids:
+		if Datos.mazo_jugador.has(id_i) and not Datos.mazo_disponible.has(id_i):
+			Datos.mazo_disponible.append(id_i)
+	mostrar_alerta("♻️ Cartas restauradas", "Restauraste " + str(ids.size()) + " cartas por $" + str(costo) + ".")
+	actualizar_interfaz()
+	_on_btn_app_mazo_pressed()
+
+func restaurar_cartas_por_base(id_base: String):
+	restaurar_instancias(_instancias_agotadas_por_base(id_base))
+
+func restaurar_todas_cartas_agotadas():
+	var ids = []
+	for id_i in Datos.mazo_jugador:
+		if not Datos.mazo_disponible.has(id_i):
+			ids.append(id_i)
+	restaurar_instancias(ids)
+
 func _on_btn_app_mazo_pressed():
 	contenedor_menu_inicio.visible = false
 	panel_app_mazo.visible = true
@@ -2586,6 +2667,11 @@ func _on_btn_app_mazo_pressed():
 		lbl.text = "No tienes cartas.\n¡Eres un actor de madera!"
 		contenedor_lista_mazo.add_child(lbl)
 		return
+
+	var btn_restaurar_all = Button.new()
+	btn_restaurar_all.text = "♻️ Restaurar TODAS las cartas agotadas"
+	btn_restaurar_all.pressed.connect(restaurar_todas_cartas_agotadas)
+	contenedor_lista_mazo.add_child(btn_restaurar_all)
 		
 	# Contar cartas repetidas para no mostrar una lista gigante
 	var conteo_cartas = {}
@@ -2648,6 +2734,16 @@ func _on_btn_app_mazo_pressed():
 		
 		var separador = HSeparator.new()
 		vbox.add_child(separador)
+
+		var agotadas = _instancias_agotadas_por_base(id_carta)
+		if not agotadas.is_empty():
+			var costo_rest = 0
+			for id_i in agotadas: costo_rest += _costo_restaurar_instancia(id_i)
+			var btn_rest = Button.new()
+			btn_rest.text = "♻️ Restaurar agotadas de esta carta (" + str(agotadas.size()) + ") - $" + str(costo_rest)
+			btn_rest.modulate = Color(0.6, 1.0, 0.6)
+			btn_rest.pressed.connect(restaurar_cartas_por_base.bind(id_carta))
+			vbox.add_child(btn_rest)
 		
 		# --- BOTÓN DE OLVIDAR TÉCNICA ---
 		var btn_vender = Button.new()
@@ -3544,6 +3640,9 @@ func _on_btn_curso_pro_pressed(): comprar_curso("pro")
 # ==========================================
 var panel_admin_creado = false
 var nodo_panel_admin = null
+const DIAS_POR_MES = 30
+const NOMBRES_DIA_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+const NOMBRES_MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
 
 func _input(event):
 	# F12: Bomba Nuclear (Borra progreso)
@@ -3761,6 +3860,7 @@ func intentar_vender_carta(id_carta):
 		mostrar_alerta("🗑️ Mazo Limpio", "Has olvidado la técnica. Tu mazo ahora es más eficiente.")
 		# NOTA: Cierra y vuelve a abrir tu panel del mazo para ver los cambios
 		dialog.queue_free()
+		_on_btn_app_mazo_pressed()
 	)
 	dialog.canceled.connect(func(): dialog.queue_free())
 	add_child(dialog)
