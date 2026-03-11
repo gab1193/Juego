@@ -230,8 +230,23 @@ func generar_usuario_aleatorio() -> String:
 		return "@" + nombres_npc.pick_random().to_lower() + str(randi_range(10, 99))
 
 func generar_contacto_nuevo(nivel_jugador: int, carisma_jugador: int) -> Dictionary:
-	var roles = ["Director", "Productor", "Maestro de Actuación", "Cazatalentos", "Guionista"]
-	var rol_elegido = roles.pick_random()
+	var tabla_roles = [
+		{"rol": "Director", "prob": 16, "hab": "Visión de Puesta", "desc": "Reduce la exigencia de castings/ensayos en -4%.", "bonus_tipo": "exigencia_pct", "bonus_valor": 0.04},
+		{"rol": "Productor", "prob": 14, "hab": "Logística de Rodaje", "desc": "Aumenta pagos fijos en +6%.", "bonus_tipo": "paga_pct", "bonus_valor": 0.06},
+		{"rol": "Maestro de Actuación", "prob": 18, "hab": "Coach de Método", "desc": "Aumenta XP de carta en entrenamiento +10%.", "bonus_tipo": "xp_carta_pct", "bonus_valor": 0.10},
+		{"rol": "Cazatalentos", "prob": 22, "hab": "Detector de Oportunidades", "desc": "Aumenta seguidores ganados en castings +8%.", "bonus_tipo": "seguidores_pct", "bonus_valor": 0.08},
+		{"rol": "Guionista", "prob": 16, "hab": "Reescritura Exprés", "desc": "+1 mulligan inicial en castings reales.", "bonus_tipo": "mulligan_flat", "bonus_valor": 1},
+		{"rol": "Relaciones Públicas", "prob": 14, "hab": "Blindaje Mediático", "desc": "Reduce penalidad por negociar fechas -30%.", "bonus_tipo": "negociacion_desc", "bonus_valor": 0.30}
+	]
+	var tirada = randi_range(1, 100)
+	var acumulado = 0
+	var dato_rol = tabla_roles[0]
+	for item in tabla_roles:
+		acumulado += int(item["prob"])
+		if tirada <= acumulado:
+			dato_rol = item
+			break
+	var rol_elegido = str(dato_rol["rol"])
 	
 	# El nivel del contacto depende de qué tan famoso/experimentado seas
 	var categoria = "Local" # Nivel 1
@@ -252,5 +267,10 @@ func generar_contacto_nuevo(nivel_jugador: int, carisma_jugador: int) -> Diction
 		"rol": rol_elegido,
 		"categoria": categoria,
 		"influencia": influencia, # Poder del contacto para futuros proyectos
-		"afinidad": 50 # Relación inicial (de 0 a 100)
+		"afinidad": 50, # Relación inicial (de 0 a 100)
+		"habilidad": dato_rol["hab"],
+		"habilidad_desc": dato_rol["desc"],
+		"bonus_tipo": dato_rol["bonus_tipo"],
+		"bonus_valor": dato_rol["bonus_valor"],
+		"activo": false
 	}

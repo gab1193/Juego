@@ -395,7 +395,7 @@ func _calendario_desde_dia_abs(dia_abs: int) -> Dictionary:
 
 func _programar_siguiente_renta():
 	var cal = _calendario_desde_dia_abs(Datos.tiempo["dia"])
-	var faltan = (DIAS_POR_MES - int(cal["dia_mes"])) + 1
+	var faltan = DIAS_POR_MES - int(cal["dia_mes"])
 	var proximo = Datos.tiempo["dia"] + faltan
 	for k in Datos.agenda.keys():
 		if Datos.agenda[k] == "Pago_Renta" and k != proximo:
@@ -425,6 +425,7 @@ func _on_btn_info_stats_pressed():
 	# Hacemos que la araña se actualice cada que abres la app
 	if is_instance_valid(grafico_arquetipo):
 		grafico_arquetipo.actualizar_grafico()
+	mostrar_alerta("❔ Guía rápida", "• Contactos: se consiguen en Mixer y ahora tienen habilidades. Equípalos en la app Contactos para activar sus perks.\n• Productora: exige contactos equipados del rol pedido (ej. Director).\n• Agenda: marca R$ el día de renta de fin de mes.\n• Negociar fechas: pide Carisma 3+, cuesta dinero y suma estrés.\n• Cartas: restaura usadas desde Mi Mazo pagando según rareza + nivel.")
 func _on_btn_cerrar_info_pressed(): panel_info_stats.visible = false
 
 # --- 4. MECÁNICAS DE RUTINA ---
@@ -1215,7 +1216,7 @@ func _on_boton_dormir_pressed():
 	
 	var dia_nuevo = Datos.tiempo["dia"]
 	var cal_nuevo = _calendario_desde_dia_abs(dia_nuevo)
-	if dia_nuevo > 1 and int(cal_nuevo["dia_mes"]) == 1:
+	if dia_nuevo > 1 and int(cal_nuevo["dia_mes"]) == DIAS_POR_MES:
 		# ¡NUEVA LÓGICA DE RENTA DOBLE!
 		var espacio_id = Datos.mi_compania["id_espacio_actual"]
 		var renta_espacio = Datos.espacios_disponibles[espacio_id]["renta_mensual"]
@@ -1317,8 +1318,13 @@ func _on_btn_app_agenda_pressed():
 		if i < dia_actual: btn_dia.modulate = Color(0.4, 0.4, 0.4) 
 		elif i == dia_actual: btn_dia.modulate = Color(1.0, 0.9, 0.2) 
 		elif Datos.agenda.has(i): 
-			btn_dia.text += "\n!" 
-			btn_dia.modulate = Color(0.2, 0.8, 0.2) 
+			var evento = str(Datos.agenda[i])
+			if evento == "Pago_Renta":
+				btn_dia.text += "\nR$"
+				btn_dia.modulate = Color(1.0, 0.45, 0.45)
+			else:
+				btn_dia.text += "\n!" 
+				btn_dia.modulate = Color(0.2, 0.8, 0.2) 
 		else: btn_dia.modulate = Color(1, 1, 1) 
 		grid_calendario.add_child(btn_dia)
 
@@ -1807,6 +1813,37 @@ func _on_btn_publicar_post_pressed():
 func _on_btn_cancelar_reel_pressed():
 	panel_seleccion_reel.visible = false
 
+func _valor_bonus_contactos(tipo_bonus: String) -> float:
+	var total := 0.0
+	for c in Datos.lista_contactos:
+		if not bool(c.get("activo", false)):
+			continue
+		if str(c.get("bonus_tipo", "")) == tipo_bonus:
+			total += float(c.get("bonus_valor", 0.0))
+	return total
+
+func _buscar_contacto_activo_por_rol(rol: String):
+	var mejor = null
+	var poder := -1
+	for c in Datos.lista_contactos:
+		if not bool(c.get("activo", false)):
+			continue
+		if str(c.get("rol", "")) != rol:
+			continue
+		var inf = int(c.get("influencia", 0))
+		if inf > poder:
+			poder = inf
+			mejor = c
+	return mejor
+
+func alternar_contacto_activo(idx: int):
+	if idx < 0 or idx >= Datos.lista_contactos.size():
+		return
+	var c = Datos.lista_contactos[idx]
+	c["activo"] = not bool(c.get("activo", false))
+	Datos.lista_contactos[idx] = c
+	_on_btn_app_contactos_pressed()
+
 func _on_btn_ir_networking_pressed():
 	if ha_ido_mixer_hoy: return
 	if Datos.stats_actor["energia_actual"] >= 2 and Datos.economia["dinero"] >= 20:
@@ -1829,7 +1866,7 @@ func _on_btn_ir_networking_pressed():
 				intentar_obtener_agente_por_contacto(nuevo_contacto)
 				sumar_seguidores(1)
 				var hist = GestorTextos.obtener_texto("networking_inicio_exito")
-				mostrar_alerta(hist.titulo, hist.desc + "\n\nObtuviste la tarjeta de:\n⭐ " + nuevo_contacto["nombre"] + " (" + nuevo_contacto["rol"] + ")")
+				mostrar_alerta(hist.titulo, hist.desc + "\n\nObtuviste la tarjeta de:\n⭐ " + nuevo_contacto["nombre"] + " (" + nuevo_contacto["rol"] + ")\n" + "Habilidad: " + str(nuevo_contacto.get("habilidad", "")) + "\n" + str(nuevo_contacto.get("habilidad_desc", "")))
 				publicar_auto("Conocí gente increíble en el Mixer de hoy. Abriendo puertas 🏙️")
 		else:
 			if suerte <= 20: 
@@ -1844,7 +1881,7 @@ func _on_btn_ir_networking_pressed():
 				var bonus_seg = Datos.habilidades_actor["carisma"] * 10
 				sumar_seguidores(bonus_seg)
 				var hist = GestorTextos.obtener_texto("networking_fama_exito")
-				mostrar_alerta(hist.titulo, hist.desc + "\n\nObtuviste la tarjeta de:\n⭐ " + nuevo_contacto["nombre"] + " (" + nuevo_contacto["rol"] + ")")
+				mostrar_alerta(hist.titulo, hist.desc + "\n\nObtuviste la tarjeta de:\n⭐ " + nuevo_contacto["nombre"] + " (" + nuevo_contacto["rol"] + ")\n" + "Habilidad: " + str(nuevo_contacto.get("habilidad", "")) + "\n" + str(nuevo_contacto.get("habilidad_desc", "")))
 				publicar_auto("Noche de networking con los grandes. Se vienen colaboraciones 🥂✨")
 			
 		actualizar_metricas_redes()
@@ -1863,13 +1900,58 @@ func _on_btn_app_contactos_pressed():
 		label_vacio.text = "Tu libreta está vacía. Ve a Mixers."
 		contenedor_lista_contactos.add_child(label_vacio)
 	else:
-		for c in Datos.lista_contactos:
-			var label_contacto = Label.new()
-			if c["categoria"] == "Local": label_contacto.modulate = Color(0.8, 0.8, 0.8)
-			elif c["categoria"] == "Indie": label_contacto.modulate = Color(0.4, 0.8, 1.0)
-			elif c["categoria"] == "Profesional": label_contacto.modulate = Color(1.0, 0.8, 0.2)
-			label_contacto.text = "👤 " + c["nombre"] + "\n  ↳ " + c["rol"] + " " + c["categoria"] + " (Poder: " + str(c["influencia"]) + ")"
-			contenedor_lista_contactos.add_child(label_contacto)
+		for i in range(Datos.lista_contactos.size()):
+			var c = Datos.lista_contactos[i]
+			if not c.has("habilidad"):
+				c["habilidad"] = "Sin especialidad"
+				c["habilidad_desc"] = "Contacto legacy sin perk. Consigue nuevos en mixers."
+				c["bonus_tipo"] = ""
+				c["bonus_valor"] = 0.0
+			if not c.has("activo"):
+				c["activo"] = false
+			Datos.lista_contactos[i] = c
+
+			var panel = VBoxContainer.new()
+			if c["categoria"] == "Local": panel.modulate = Color(0.8, 0.8, 0.8)
+			elif c["categoria"] == "Indie": panel.modulate = Color(0.4, 0.8, 1.0)
+			elif c["categoria"] == "Profesional": panel.modulate = Color(1.0, 0.8, 0.2)
+			
+			var lbl = Label.new()
+			var estado = "🟢 Equipado" if bool(c.get("activo", false)) else "⚪ En libreta"
+			lbl.text = "👤 " + str(c.get("nombre", "Sin nombre")) + "\n"
+			lbl.text += "↳ " + str(c.get("rol", "Sin rol")) + " " + str(c.get("categoria", "Local")) + " (Poder: " + str(c.get("influencia", 0)) + ")\n"
+			lbl.text += "✨ " + str(c.get("habilidad", "Sin especialidad")) + ": " + str(c.get("habilidad_desc", "")) + "\n"
+			lbl.text += estado
+			panel.add_child(lbl)
+
+			var btn_toggle = Button.new()
+			btn_toggle.text = "Desequipar" if bool(c.get("activo", false)) else "Equipar"
+			btn_toggle.pressed.connect(alternar_contacto_activo.bind(i))
+			panel.add_child(btn_toggle)
+			
+			contenedor_lista_contactos.add_child(panel)
+
+func intentar_obtener_agente_por_contacto(contacto: Dictionary):
+	var pool = []
+	var rol = str(contacto.get("rol", ""))
+	if rol == "Director": pool = ["padrino_metodo", "mania_comedia"]
+	elif rol == "Productor": pool = ["mania_comedia", "sponsor_fisico"]
+	elif rol == "Maestro de Actuación": pool = ["amuleto_memoria", "padrino_metodo"]
+	else: pool = ["amuleto_memoria", "sponsor_fisico"]
+	if pool.is_empty():
+		return
+	if randi_range(1, 100) > 35:
+		return
+	var id_ag = pool.pick_random()
+	if Datos.agentes_poseidos.has(id_ag):
+		return
+	Datos.agentes_poseidos.append(id_ag)
+	for i in range(Datos.agentes_slots.size()):
+		if str(Datos.agentes_slots[i]) == "":
+			Datos.agentes_slots[i] = id_ag
+			break
+	var info_ag = Datos.catalogo_agentes.get(id_ag, {})
+	mostrar_alerta("🃏 Nuevo Agente", "Conseguiste: " + str(info_ag.get("nombre", id_ag)) + "\n" + str(info_ag.get("desc", "")))
 
 func intentar_obtener_agente_por_contacto(contacto: Dictionary):
 	var pool = []
@@ -2260,14 +2342,8 @@ func _on_btn_app_productora_pressed():
 		# Validar si el espacio es suficientemente grande
 		var espacio_ok = espacio_actual["capacidad_equipo"] >= formato["espacio_minimo"]
 		
-		# Buscar si tenemos un contacto que cumpla el rol necesario (Director, Productor, etc)
-		var contacto_valido = null
-		var mayor_influencia = -1
-		for c in Datos.lista_contactos:
-			if c["rol"] == formato["rol_necesario"]:
-				if c["influencia"] > mayor_influencia:
-					mayor_influencia = c["influencia"]
-					contacto_valido = c
+		# Buscar contacto equipado que cumpla el rol necesario
+		var contacto_valido = _buscar_contacto_activo_por_rol(formato["rol_necesario"])
 		
 		var txt = "🎬 " + formato["titulo"] + "\n"
 		txt += "Costo Montaje: $" + str(formato["costo_montaje"]) + " | Tu Ganancia: " + str(formato["porcentaje_ganancia"] * 100) + "% de Taquilla\n"
@@ -2277,7 +2353,7 @@ func _on_btn_app_productora_pressed():
 			txt += "\n❌ Tu local actual es muy pequeño."
 			btn.disabled = true
 		elif contacto_valido == null:
-			txt += "\n❌ No tienes ningún " + formato["rol_necesario"] + " en tus contactos."
+			txt += "\n❌ Necesitas equipar un " + formato["rol_necesario"] + " en Contactos."
 			btn.disabled = true
 		else:
 			txt += "\n✅ Contacto Asignado: " + contacto_valido["nombre"] + " (Poder: " + str(contacto_valido["influencia"]) + ")"
@@ -2382,8 +2458,21 @@ func _on_btn_tec_nada_pressed():
 # 📅 SISTEMA DE NEGOCIACIÓN DE FECHAS
 # ==========================================
 func _on_btn_negociar_fechas_pressed():
+	if not Datos.proyectos_activos.has("temp"):
+		return
+	var c = Datos.proyectos_activos["temp"]
+	var tier = int(c.get("importancia", 1))
+	var base = 20 + (tier * 12) + int(c.get("nivel_minimo", 1)) * 4
+	var descuento = clamp(_valor_bonus_contactos("negociacion_desc"), 0.0, 0.6)
+	var costo = int(round(base * (1.0 - descuento)))
+	if Datos.economia["dinero"] < costo:
+		mostrar_alerta("Sin fondos", "Negociar fechas cuesta $" + str(costo) + " y no te alcanza.")
+		return
+	Datos.economia["dinero"] -= costo
+	Datos.stats_actor["estres"] = clamp(Datos.stats_actor.get("estres", 0) + 4 + tier, 0, 100)
 	desplazamiento_fechas += 1 # Empujamos el proyecto un día más
 	actualizar_calendario_negociacion()
+	mostrar_alerta("📅 Fecha renegociada", "Pagaste $" + str(costo) + " en gestión de agenda y subió +" + str(4 + tier) + " tu estrés.")
 
 func actualizar_calendario_negociacion():
 	var c = Datos.proyectos_activos["temp"]
@@ -2395,8 +2484,12 @@ func actualizar_calendario_negociacion():
 		btn_negociar_fechas.text = "🔒 Negociar (Pide Nvl. 3 Carisma)"
 		btn_negociar_fechas.disabled = true
 	else:
-		btn_negociar_fechas.text = "📅 Negociar Fechas (+1 Día)"
-		btn_negociar_fechas.disabled = false
+		var tier = int(c.get("importancia", 1))
+		var base = 20 + (tier * 12) + int(c.get("nivel_minimo", 1)) * 4
+		var descuento = clamp(_valor_bonus_contactos("negociacion_desc"), 0.0, 0.6)
+		var costo_negociar = int(round(base * (1.0 - descuento)))
+		btn_negociar_fechas.text = "📅 Negociar Fechas (+1 Día) -$" + str(costo_negociar)
+		btn_negociar_fechas.disabled = Datos.economia["dinero"] < costo_negociar
 	
 	# 1. Calculamos las fechas que tomará este proyecto
 	dias_propuestos_temp.clear()
@@ -2406,7 +2499,8 @@ func actualizar_calendario_negociacion():
 	# 2. Verificamos si hay choques con la agenda existente
 	var hay_choque = false
 	for d in dias_propuestos_temp:
-		if Datos.agenda.has(d): hay_choque = true
+		if Datos.agenda.has(d):
+			hay_choque = true
 	
 	# 3. Actualizamos los textos informativos
 	var info = "¿Firmar contrato para:\n" + c["titulo_unico"] + "?\n\n"
@@ -2414,7 +2508,7 @@ func actualizar_calendario_negociacion():
 	
 	if c.has("tipo_pago") and c["tipo_pago"] == "taquilla":
 		info += "⚠️ Tu pago dependerá del HYPE y público que atraigas.\n"
-	else: 
+	else:
 		info += "💰 Pago Final Fijo: $" + str(c.get("paga", 0)) + "\n"
 		
 	if hay_choque:
@@ -2425,12 +2519,13 @@ func actualizar_calendario_negociacion():
 		btn_confirmar_casting.disabled = true
 	else:
 		info += "\n✅ Fechas Libres. Puedes firmar."
-	btn_confirmar_casting.disabled = false
+		btn_confirmar_casting.disabled = false
 		
 	label_detalles_casting.text = info
 	
 	# 4. Dibujamos el Mini-Calendario visual (Los próximos 21 días)
-	for hijo in grid_calendario_confirmacion.get_children(): hijo.queue_free()
+	for hijo in grid_calendario_confirmacion.get_children():
+		hijo.queue_free()
 	
 	for i in range(dia_actual, dia_actual + 21):
 		var btn = Button.new()
@@ -2452,11 +2547,6 @@ func actualizar_calendario_negociacion():
 			btn.modulate = Color(1.0, 1.0, 1.0) # BLANCO: Día vacío
 			
 		grid_calendario_confirmacion.add_child(btn)
-
-
-# ==========================================
-# 📱 LÓGICA DE SELECCIÓN DE REELS
-# ==========================================
 func publicar_reel_seleccionado(id_eleccion):
 	panel_seleccion_reel.visible = false
 	
