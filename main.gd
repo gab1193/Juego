@@ -789,56 +789,61 @@ func resolver_rutina_general(fue_exito):
 	elif tipo_rutina == "ensayo_casa":
 		Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] + 5, 0, 100) # +5 Estrés
 		
-		# --- BOOST DE PROYECTO (El que elegiste en el menú) ---
 		var texto_extra = ""
 		
 		if proyecto_a_ensayar != "" and Datos.proyectos_activos.has(proyecto_a_ensayar):
 			var id_act = proyecto_a_ensayar
 			if fue_exito:
-				Datos.proyectos_activos[id_act]["rendimiento_acumulado"] += 0.5 # Medio punto de estrella
-				texto_extra = "\n\n📈 Repasaste tu papel y mejoraste el rendimiento de tu obra."
+				Datos.proyectos_activos[id_act]["rendimiento_acumulado"] += 0.5 
+				texto_extra = "\n\n📈 Repasaste tu papel y mejoraste el rendimiento."
 			else:
 				Datos.proyectos_activos[id_act]["rendimiento_acumulado"] += 0.1 
 				texto_extra = "\n\n📉 Repasaste, pero te confundiste un poco con las líneas."
 				
-		# --- RECOMPENSA DE XP Y DROP DE CARTAS ---
+		# --- 🚨 ANTI-CRASH DE TEXTOS ---
 		if fue_exito:
 			var xp_ganada = 60
-			if Datos.estado_actual == "inspirado": 
-				xp_ganada *= 2 
-				texto_extra += "\n✨ (XP Doble por Inspiración)"
-				
-			
-				
+			if Datos.estado_actual == "inspirado": xp_ganada *= 2; texto_extra += "\n✨ (XP Doble por Inspiración)"
 			Datos.habilidades_actor["xp_actual"] += xp_ganada
+			
 			var hist = GestorTextos.obtener_texto("ensayo_casa_exito")
-			mostrar_alerta(hist.titulo, hist.desc + "\n\nGanaste: +" + str(xp_ganada) + " XP" + texto_extra)
+			var t_tit = "Ensayo Terminado"; var t_desc = "Repasaste tus líneas a la perfección."
+			if typeof(hist) == TYPE_DICTIONARY: t_tit = hist.get("titulo", t_tit); t_desc = hist.get("desc", t_desc)
+			mostrar_alerta(t_tit, t_desc + "\n\nGanaste: +" + str(xp_ganada) + " XP" + texto_extra)
 		else:
 			var xp_ganada = 20
 			Datos.habilidades_actor["xp_actual"] += xp_ganada
+			
 			var hist = GestorTextos.obtener_texto("ensayo_casa_fallo")
-			mostrar_alerta(hist.titulo, hist.desc + "\n\nGanaste: +" + str(xp_ganada) + " XP" + texto_extra)
+			var t_tit = "Ensayo Mediocre"; var t_desc = "Te distrajiste mucho, pero algo aprendiste."
+			if typeof(hist) == TYPE_DICTIONARY: t_tit = hist.get("titulo", t_tit); t_desc = hist.get("desc", t_desc)
+			mostrar_alerta(t_tit, t_desc + "\n\nGanaste: +" + str(xp_ganada) + " XP" + texto_extra)
 			
 	elif tipo_rutina == "ensayo_cast":
-		Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] + 10, 0, 100) # +10 Estrés
+		Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] + 10, 0, 100) 
 		var titulo_obra = casting_data_actual["titulo_unico"].split("\n")[1]
 		
 		if fue_exito:
 			var xp_ganada = 90
 			if Datos.estado_actual == "inspirado": xp_ganada *= 2
-			
 			Datos.habilidades_actor["xp_actual"] += xp_ganada
 			casting_data_actual["rendimiento_acumulado"] += 1 
+			
 			var hist = GestorTextos.obtener_texto("ensayo_cast_exito")
-			mostrar_alerta(hist.titulo, hist.desc + "\n\nGanaste: +" + str(xp_ganada) + " XP")
+			var t_tit = "Buen Ensayo"; var t_desc = "El director amó tu propuesta."
+			if typeof(hist) == TYPE_DICTIONARY: t_tit = hist.get("titulo", t_tit); t_desc = hist.get("desc", t_desc)
+			mostrar_alerta(t_tit, t_desc + "\n\nGanaste: +" + str(xp_ganada) + " XP")
 			publicar_auto("Trabajando duro en el set de '" + titulo_obra + "'. Dando el 100%. ✨")
 		else:
 			Datos.habilidades_actor["xp_actual"] += 30
+			
 			var hist = GestorTextos.obtener_texto("ensayo_cast_fallo")
-			mostrar_alerta(hist.titulo, hist.desc + "\n\nGanaste: +30 XP")
+			var t_tit = "Día Difícil"; var t_desc = "El director te gritó todo el ensayo."
+			if typeof(hist) == TYPE_DICTIONARY: t_tit = hist.get("titulo", t_tit); t_desc = hist.get("desc", t_desc)
+			mostrar_alerta(t_tit, t_desc + "\n\nGanaste: +30 XP")
 			publicar_auto("Días difíciles trabajando en '" + titulo_obra + "'. A repasar guion. 📖")
 			
-		Datos.agenda.erase(Datos.tiempo["dia"]) 
+		Datos.agenda.erase(Datos.tiempo["dia"])
 		# --- 🌟 PODER FINAL DEL MÉTODO (VAMPIRISMO DE ESTRÉS) ---
 	var mi_arq_final = obtener_arquetipo_dominante()
 	var nivel_arq_final = Datos.perfil_actor.get(mi_arq_final, 0)
@@ -1000,17 +1005,13 @@ func comprobar_level_up():
 	if Datos.habilidades_actor.get("xp_requerida", 0) <= 10:
 		Datos.habilidades_actor["xp_requerida"] = 100
 		
-	# 🚨 FRENO ANTI-DESBORDAMIENTO (Previene el congelamiento)
-	var limite_seguridad_xp = 0
-		
-	while Datos.habilidades_actor["xp_actual"] >= Datos.habilidades_actor["xp_requerida"]:
-		limite_seguridad_xp += 1
-		if limite_seguridad_xp > 100 or Datos.habilidades_actor["xp_requerida"] <= 0:
-			break # Si da más de 100 vueltas o la matemática se rompe, aborta el bucle.
-			
+	# 🚨 SOLUCIÓN NUCLEAR: Máximo 50 vueltas de subida de nivel por golpe
+	for i in range(50):
+		if Datos.habilidades_actor["xp_actual"] < Datos.habilidades_actor["xp_requerida"]:
+			break
+
 		Datos.habilidades_actor["xp_actual"] -= Datos.habilidades_actor["xp_requerida"] 
 		Datos.habilidades_actor["nivel_general"] += 1
-		
 		Datos.habilidades_actor["xp_requerida"] = int(Datos.habilidades_actor["xp_requerida"] * 1.4) 
 		subio_nivel = true
 		
@@ -2543,23 +2544,20 @@ func repartir_mano_balasim(es_inicio):
 		if not hijo.is_queued_for_deletion():
 			cartas_vivas += 1
 			
-	var limite_seguridad = 0
-	# 🚨 FRENO ANTI-DUPLICADOS: No puedes robar más cartas de las que posees en total
 	var tope_mano = min(6, Datos.mazo_jugador.size())
 	
-	while cartas_vivas < tope_mano and limite_seguridad < 20:
-		limite_seguridad += 1
-		
+	# 🚨 SOLUCIÓN NUCLEAR: Un bucle FOR no puede crashear Windows. Máximo 50 vueltas.
+	for i in range(50):
+		if cartas_vivas >= tope_mano:
+			break
+			
 		if Datos.mazo_disponible.is_empty():
-			# Si ya tienes todo tu mazo en la mano, paramos de robar inmediatamente
-			if cartas_vivas >= Datos.mazo_jugador.size():
-				break
 			Datos.mazo_disponible = Datos.mazo_jugador.duplicate()
 			Datos.mazo_disponible.shuffle()
 			
 		if Datos.mazo_disponible.is_empty():
-			break
-			
+			break # Si el mazo de verdad no tiene nada, salimos
+
 		var id_c = Datos.mazo_disponible.pick_random()
 		crear_boton_carta_en_mesa(id_c)
 		Datos.mazo_disponible.erase(id_c)
