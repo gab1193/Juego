@@ -1953,6 +1953,28 @@ func intentar_obtener_agente_por_contacto(contacto: Dictionary):
 	var info_ag = Datos.catalogo_agentes.get(id_ag, {})
 	mostrar_alerta("🃏 Nuevo Agente", "Conseguiste: " + str(info_ag.get("nombre", id_ag)) + "\n" + str(info_ag.get("desc", "")))
 
+func intentar_obtener_agente_por_contacto(contacto: Dictionary):
+	var pool = []
+	var rol = str(contacto.get("rol", ""))
+	if rol == "Director": pool = ["padrino_metodo", "mania_comedia"]
+	elif rol == "Productor": pool = ["mania_comedia", "sponsor_fisico"]
+	elif rol == "Maestro de Actuación": pool = ["amuleto_memoria", "padrino_metodo"]
+	else: pool = ["amuleto_memoria", "sponsor_fisico"]
+	if pool.is_empty():
+		return
+	if randi_range(1, 100) > 35:
+		return
+	var id_ag = pool.pick_random()
+	if Datos.agentes_poseidos.has(id_ag):
+		return
+	Datos.agentes_poseidos.append(id_ag)
+	for i in range(Datos.agentes_slots.size()):
+		if str(Datos.agentes_slots[i]) == "":
+			Datos.agentes_slots[i] = id_ag
+			break
+	var info_ag = Datos.catalogo_agentes.get(id_ag, {})
+	mostrar_alerta("🃏 Nuevo Agente", "Conseguiste: " + str(info_ag.get("nombre", id_ag)) + "\n" + str(info_ag.get("desc", "")))
+
 func _on_btn_volver_inicio_contactos_pressed():
 	panel_app_contactos.visible = false
 	contenedor_menu_inicio.visible = true
