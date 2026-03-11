@@ -1863,7 +1863,7 @@ func _on_btn_ir_networking_pressed():
 				Datos.stats_actor["contactos"] += 1
 				var nuevo_contacto = GestorTextos.generar_contacto_nuevo(Datos.habilidades_actor["nivel_general"], Datos.habilidades_actor["carisma"])
 				Datos.lista_contactos.append(nuevo_contacto)
-				intentar_obtener_agente_por_contacto(nuevo_contacto)
+				otorgar_agente_por_contacto_mixer(nuevo_contacto)
 				sumar_seguidores(1)
 				var hist = GestorTextos.obtener_texto("networking_inicio_exito")
 				mostrar_alerta(hist.titulo, hist.desc + "\n\nObtuviste la tarjeta de:\n⭐ " + nuevo_contacto["nombre"] + " (" + nuevo_contacto["rol"] + ")\n" + "Habilidad: " + str(nuevo_contacto.get("habilidad", "")) + "\n" + str(nuevo_contacto.get("habilidad_desc", "")))
@@ -1877,7 +1877,7 @@ func _on_btn_ir_networking_pressed():
 				Datos.stats_actor["contactos"] += 1
 				var nuevo_contacto = GestorTextos.generar_contacto_nuevo(Datos.habilidades_actor["nivel_general"], Datos.habilidades_actor["carisma"])
 				Datos.lista_contactos.append(nuevo_contacto)
-				intentar_obtener_agente_por_contacto(nuevo_contacto)
+				otorgar_agente_por_contacto_mixer(nuevo_contacto)
 				var bonus_seg = Datos.habilidades_actor["carisma"] * 10
 				sumar_seguidores(bonus_seg)
 				var hist = GestorTextos.obtener_texto("networking_fama_exito")
@@ -1931,29 +1931,7 @@ func _on_btn_app_contactos_pressed():
 			
 			contenedor_lista_contactos.add_child(panel)
 
-func intentar_obtener_agente_por_contacto(contacto: Dictionary):
-	var pool = []
-	var rol = str(contacto.get("rol", ""))
-	if rol == "Director": pool = ["padrino_metodo", "mania_comedia"]
-	elif rol == "Productor": pool = ["mania_comedia", "sponsor_fisico"]
-	elif rol == "Maestro de Actuación": pool = ["amuleto_memoria", "padrino_metodo"]
-	else: pool = ["amuleto_memoria", "sponsor_fisico"]
-	if pool.is_empty():
-		return
-	if randi_range(1, 100) > 35:
-		return
-	var id_ag = pool.pick_random()
-	if Datos.agentes_poseidos.has(id_ag):
-		return
-	Datos.agentes_poseidos.append(id_ag)
-	for i in range(Datos.agentes_slots.size()):
-		if str(Datos.agentes_slots[i]) == "":
-			Datos.agentes_slots[i] = id_ag
-			break
-	var info_ag = Datos.catalogo_agentes.get(id_ag, {})
-	mostrar_alerta("🃏 Nuevo Agente", "Conseguiste: " + str(info_ag.get("nombre", id_ag)) + "\n" + str(info_ag.get("desc", "")))
-
-func intentar_obtener_agente_por_contacto(contacto: Dictionary):
+func otorgar_agente_por_contacto_mixer(contacto: Dictionary):
 	var pool = []
 	var rol = str(contacto.get("rol", ""))
 	if rol == "Director": pool = ["padrino_metodo", "mania_comedia"]
@@ -3794,7 +3772,7 @@ func crear_panel_admin():
 		var c = GestorTextos.generar_contacto_nuevo(Datos.habilidades_actor["nivel_general"], Datos.habilidades_actor["carisma"])
 		Datos.lista_contactos.append(c)
 		Datos.stats_actor["contactos"] += 1
-		intentar_obtener_agente_por_contacto(c)
+		otorgar_agente_por_contacto_mixer(c)
 		actualizar_interfaz()
 	)
 
