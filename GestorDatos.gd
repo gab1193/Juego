@@ -197,6 +197,83 @@ var catalogo_cartas = {
 	"oscar_honorifico": {"nombre": "Premio a la Trayectoria", "rareza": "Legendaria", "poder": 90, "efecto": "curar_estres", "valor": 50, "desc": "Ya no tienes nada que probar. (Cura 50 Estrés)"}
 }
 
+# ==========================================
+# 🧭 ASIGNACIÓN DE ARQUETIPOS (Balance por estilo)
+# ==========================================
+const ARQUETIPOS_CARTAS = {
+	"metodo": [
+		"lagrima_falsa", "mirada_perdida", "suspiro_profundo", "morderse_labio", "tragar_saliva",
+		"mirada_al_cielo", "ceno_fruncido", "mirada_intensa", "llanto_feo", "grito_ahogado",
+		"lagrima_solitaria", "mirada_juzgadora", "voz_quebrada", "berrinche", "monologo_intenso",
+		"ataque_panico_real", "llanto_desconsolado", "revelacion_traicion", "mirada_de_muerte",
+		"amenaza_sutil", "masajear_sienes", "romper_llanto", "llorar_sangre", "monologo_villano",
+		"metodo_absoluto", "actuacion_trascendental", "director_llora", "renacimiento_artistico"
+	],
+	"fisico": [
+		"tropiezo_gracioso", "paso_atras", "caida_dramatica", "bofetada_falsa", "golpe_en_la_mesa",
+		"tirar_silla", "sacrificio_fisico", "pelea_coreografiada", "cachetada_real", "destrozar_set",
+		"fingir_desmayo", "desmayo_realista", "apretar_punos", "quitarse_chaqueta", "grito_de_batalla"
+	],
+	"forma": [
+		"voz_profunda", "tos_falsa", "tartamudeo_calculado", "carraspeo", "mirar_apuntador",
+		"susurro", "pausa_dramatica", "proyeccion_vocal", "monologo_acelerado", "ajustar_gafas",
+		"tomar_agua", "susurro_amenazante", "perfeccion_absoluta"
+	],
+	"comercial": [
+		"carisma_magnetico", "cejas_arqueadas", "sonrisa_falsa", "asentir_lentamente", "jugar_cabello",
+		"pose_generica", "ajuste_corbata", "encoger_hombros", "sonrisa_timida", "sonrisa_congelada",
+		"senal_de_paz", "risa_sarcastica", "apuntar_dedo", "discurso_inspirador", "divo_insuperable",
+		"premio_oscar_prematuro", "ovacion_de_pie", "ego_infinito", "risa_burlona", "oscar_honorifico"
+	],
+	"instinto": [
+		"risa_nerviosa", "silencio_incomodo", "mirada_al_reloj", "rascarse_cabeza", "bostezo_disimulado",
+		"parpadeo_rapido", "frotarse_manos", "improvisacion_brillante", "robar_utileria",
+		"mirada_desafiante", "risa_maniaca", "improvisar_cancion", "ignorar_director",
+		"romper_cuarta_pared", "beso_no_guionizado", "revelacion_chocante", "improvisacion_maestra",
+		"insulto_director", "control_mental_set", "romper_el_universo", "director_despedido",
+		"salto_fe", "quitar_peluca", "mirada_de_reojo", "basura_nervios", "basura_panico"
+	]
+}
+
+# Rangos de seguridad para efectos (no altera valores actuales si están dentro)
+const RANGOS_EFECTO = {
+	"bajar_exigencia": {"Común": Vector2(2, 4), "Rara": Vector2(4, 8), "Épica": Vector2(10, 25), "Legendaria": Vector2(20, 60)},
+	"curar_estres": {"Común": Vector2(5, 10), "Rara": Vector2(10, 20), "Épica": Vector2(20, 35), "Legendaria": Vector2(40, 100)},
+	"robar_carta": {"Común": Vector2(1, 2), "Rara": Vector2(2, 3), "Épica": Vector2(2, 4), "Legendaria": Vector2(3, 5)},
+	"mas_jugadas": {"Común": Vector2(1, 1), "Rara": Vector2(1, 2), "Épica": Vector2(2, 3), "Legendaria": Vector2(3, 5)},
+	"multiplicar_poder": {"Común": Vector2(1.2, 1.3), "Rara": Vector2(1.3, 1.6), "Épica": Vector2(1.6, 2.2), "Legendaria": Vector2(2.5, 4.0)},
+	"escalar_carisma": {"Común": Vector2(1, 1), "Rara": Vector2(1, 2), "Épica": Vector2(2, 4), "Legendaria": Vector2(6, 10)},
+	"sacrificar_energia": {"Común": Vector2(1, 1), "Rara": Vector2(1, 1), "Épica": Vector2(1, 2), "Legendaria": Vector2(2, 3)},
+	"restaurar_mulligan": {"Común": Vector2(1, 1), "Rara": Vector2(1, 1), "Épica": Vector2(1, 2), "Legendaria": Vector2(2, 3)}
+}
+
+func normalizar_catalogo_cartas():
+	_aplicar_arquetipos_cartas()
+	_balancear_efectos_cartas()
+
+func _aplicar_arquetipos_cartas():
+	for arq in ARQUETIPOS_CARTAS.keys():
+		for id in ARQUETIPOS_CARTAS[arq]:
+			if not catalogo_cartas.has(id):
+				print("⚠️ Carta inexistente en arquetipos: ", id)
+				continue
+			catalogo_cartas[id]["arquetipo"] = arq
+	# Default para las que no estén mapeadas
+	for id in catalogo_cartas.keys():
+		if not catalogo_cartas[id].has("arquetipo"):
+			catalogo_cartas[id]["arquetipo"] = "versatil"
+
+func _balancear_efectos_cartas():
+	for id in catalogo_cartas.keys():
+		var carta = catalogo_cartas[id]
+		var ef = carta.get("efecto", "")
+		if ef == "" or ef == "basura": continue
+		var rareza = carta.get("rareza", "Común")
+		if RANGOS_EFECTO.has(ef) and RANGOS_EFECTO[ef].has(rareza):
+			var rango = RANGOS_EFECTO[ef][rareza]
+			var valor = float(carta.get("valor", rango.x))
+			carta["valor"] = clamp(valor, rango.x, rango.y)
+
 # --- MEGA RECETAS DE CRAFTEO ---
 # ==========================================
 # 🔮 MEGA RECETAS DE CRAFTEO (De Común a Legendaria)
