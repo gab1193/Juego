@@ -432,7 +432,9 @@ func iniciar_skill_check(tipo):
 		elif tipo == "casting_real":
 			var nivel_req = casting_data_actual.get("nivel_minimo", 1)
 			nombre_jefe = "Casting: " + casting_data_actual.get("empresa", "Productora")
-			exigencia_director = (nivel_req * 12) + randi_range(10, 20)
+			var bal = _exigencia_casting_balance(casting_data_actual)
+			exigencia_director = int(bal["exigencia"])
+			rondas_restantes = int(bal["rondas"])
 		elif tipo == "ensayo_cast" or tipo == "funcion":
 			var nivel_req = casting_data_actual.get("nivel_minimo", 1)
 			var arq = casting_data_actual.get("arquetipo", "comercial")
@@ -1388,6 +1390,10 @@ func _perfil_escalado_casting(id_base: String, base_casting: Dictionary, progres
 		seg_obj = int(seg_obj * 0.35)
 		paga_obj = max(40, int(paga_obj * 0.85))
 		xp_obj = int(xp_obj * 0.8)
+	elif id_base == "corto_estudiantil":
+		dificultad_obj *= 0.75
+		seg_obj = int(seg_obj * 0.25)
+		xp_obj = int(xp_obj * 0.85)
 	elif id_base == "extra_pelicula":
 		dificultad_obj *= 0.85
 		seg_obj = int(seg_obj * 0.4)
@@ -1414,6 +1420,43 @@ func _perfil_escalado_casting(id_base: String, base_casting: Dictionary, progres
 		"recompensa_xp": max(20, xp_obj),
 		"recompensa_seguidores": max(5, seg_reward_obj)
 	}
+
+func _tier_casting_por_id(id_base: String, base_casting: Dictionary) -> int:
+	if id_base in ["animador_fiestas", "extra_pelicula", "corto_estudiantil", "obra_universitaria", "microteatro_bar"]:
+		return 1
+	if id_base in ["doblaje_indie", "locutor_radio", "comercial_local", "obra_independiente", "standup_club"]:
+		return 2
+	if id_base in ["teatro_nacional", "serie_streaming", "campana_global", "pelicula_indie_festival"]:
+		return 3
+	return int(base_casting.get("importancia", 1))
+
+func _rango_nivel_tier(tier: int) -> Vector2i:
+	if tier <= 1:
+		return Vector2i(1, 3)
+	if tier == 2:
+		return Vector2i(3, 6)
+	return Vector2i(5, 9)
+
+func _tier_maximo_por_nivel(nivel: int) -> int:
+	if nivel < 4:
+		return 1
+	if nivel < 7:
+		return 2
+	return 3
+
+func _exigencia_casting_balance(casting: Dictionary) -> Dictionary:
+	var niv = max(1, int(casting.get("nivel_minimo", 1)))
+	var tier = max(1, int(casting.get("importancia", 1)))
+	var dif = max(1.0, float(casting.get("dificultad", 1.0)))
+	var base = 10 + (niv * 5) + int(dif * 4.0) + (tier * 3)
+	var variacion = randi_range(-3, 6)
+	var exigencia = max(8, base + variacion)
+	var rondas = 2
+	if tier >= 2 or dif >= 3.0:
+		rondas += 1
+	if tier >= 3 and dif >= 4.0:
+		rondas += 1
+	return {"exigencia": exigencia, "rondas": rondas}
 
 func _agentes_activos() -> Array:
 	var act = []
@@ -1450,18 +1493,48 @@ func _mult_agente_arq(arq: String) -> float:
 func generar_castings_del_dia():
 	castings_de_hoy.clear()
 	var todas_las_llaves = Datos.castings_disponibles.keys()
-	todas_las_llaves.shuffle()
 	var objetivo = Datos.temporada_actual.get("objetivo_id", "")
 	var mutador = Datos.temporada_actual.get("mutador_id", "")
 	var progreso = _factor_progreso_global()
+	var mi_nivel = Datos.habilidades_actor["nivel_general"]
+	var tier_max = _tier_maximo_por_nivel(mi_nivel)
 	
-	for i in range(min(3, todas_las_llaves.size())):
-		var id_base = todas_las_llaves[i]
+	var por_tier = {1: [], 2: [], 3: []}
+	for id_c in todas_las_llaves:
+		var base = Datos.castings_disponibles[id_c]
+		var t = _tier_casting_por_id(id_c, base)
+		if not por_tier.has(t): por_tier[t] = []
+		por_tier[t].append(id_c)
+	for t in por_tier.keys():
+		por_tier[t].shuffle()
+
+	var plan_tiers = [1]
+	plan_tiers.append(clamp(tier_max, 1, 3))
+	if tier_max >= 2:
+		plan_tiers.append(clamp(tier_max + randi_range(-1, 0), 1, 3))
+	else:
+		plan_tiers.append(1)
+	
+	var usados_ids = []
+	for i in range(plan_tiers.size()):
+		var tier_obj = plan_tiers[i]
+		var candidatos = por_tier.get(tier_obj, []).duplicate()
+		if candidatos.is_empty():
+			continue
+		var id_base = ""
+		for cand in candidatos:
+			if not usados_ids.has(cand):
+				id_base = cand
+				break
+		if id_base == "":
+			id_base = candidatos[0]
+		usados_ids.append(id_base)
 		var base_casting = Datos.castings_disponibles[id_base].duplicate()
-		var mi_nivel = Datos.habilidades_actor["nivel_general"]
-		var tier = int(base_casting.get("importancia", 1))
-		var min_rel = max(1, int(mi_nivel + (tier - 2)))
-		var max_rel = max(min_rel, int(mi_nivel + tier))
+		var tier = _tier_casting_por_id(id_base, base_casting)
+		base_casting["importancia"] = tier
+		var rango_tier = _rango_nivel_tier(tier)
+		var min_rel = max(rango_tier.x, min(mi_nivel + tier - 2, rango_tier.y))
+		var max_rel = clamp(mi_nivel + tier, min_rel, rango_tier.y + int(progreso))
 		var nivel_generado = randi_range(min_rel, max_rel)
 		
 		base_casting["nivel_minimo"] = nivel_generado
@@ -3524,8 +3597,54 @@ func crear_panel_admin():
 	var btn_cartas = Button.new(); btn_cartas.text = "🃏 Rellenar Mano"
 	btn_cartas.pressed.connect(func(): Datos.mazo_disponible = Datos.mazo_jugador.duplicate(); mostrar_alerta("Admin", "Mazo Disponible recargado."))
 
+	var btn_seguidores = Button.new(); btn_seguidores.text = "📣 +500 Seguidores"
+	btn_seguidores.pressed.connect(func(): Datos.stats_actor["seguidores"] += 500; comprobar_hitos_redes(); actualizar_interfaz())
+
+	var btn_contacto = Button.new(); btn_contacto.text = "🤝 +1 Contacto"
+	btn_contacto.pressed.connect(func():
+		var c = GestorTextos.generar_contacto_nuevo(Datos.habilidades_actor["nivel_general"], Datos.habilidades_actor["carisma"])
+		Datos.lista_contactos.append(c)
+		Datos.stats_actor["contactos"] += 1
+		intentar_obtener_agente_por_contacto(c)
+		actualizar_interfaz()
+	)
+
+	var btn_book = Button.new(); btn_book.text = "📖 Add crédito 5⭐"
+	btn_book.pressed.connect(func():
+		Datos.historial_proyectos.push_front({"titulo": "Admin Test", "papel": "Protagónico", "estrellas": 5, "ganancia": 999, "nivel": 6, "sold_out": true})
+		actualizar_interfaz()
+	)
+
+	var btn_cartas_raras = Button.new(); btn_cartas_raras.text = "🧪 +3 Cartas Aleatorias"
+	btn_cartas_raras.pressed.connect(func():
+		var pools = _obtener_pools_cartas_por_rareza()
+		var pesos = _pesos_base_por_nivel(max(8, Datos.habilidades_actor.get("nivel_general", 1)))
+		for i in range(3):
+			var rar = _elegir_rareza_por_pesos(pesos)
+			var idc = _elegir_carta_por_rareza(pools, rar)
+			if idc != "":
+				var inst = Datos.crear_instancia_carta(idc)
+				if inst != "":
+					Datos.mazo_jugador.append(inst)
+					Datos.mazo_disponible.append(inst)
+		actualizar_interfaz()
+	)
+
+	var btn_lv10 = Button.new(); btn_lv10.text = "⬆️ Maxear 5 cartas"
+	btn_lv10.pressed.connect(func():
+		var limite = min(5, Datos.mazo_jugador.size())
+		for i in range(limite):
+			var id_i = Datos.mazo_jugador[i]
+			if Datos.cartas_instancia.has(id_i):
+				Datos.cartas_instancia[id_i]["nivel"] = Datos.NIVEL_MAX_CARTA
+				Datos.cartas_instancia[id_i]["xp_actual"] = 0
+				Datos.cartas_instancia[id_i]["xp_requerida"] = 100 + ((Datos.NIVEL_MAX_CARTA - 1) * 40)
+		actualizar_interfaz()
+	)
+
 	vbox.add_child(btn_dinero); vbox.add_child(btn_energia); vbox.add_child(btn_xp)
-	vbox.add_child(btn_dia); vbox.add_child(btn_cartas)
+	vbox.add_child(btn_dia); vbox.add_child(btn_cartas); vbox.add_child(btn_seguidores)
+	vbox.add_child(btn_contacto); vbox.add_child(btn_book); vbox.add_child(btn_cartas_raras); vbox.add_child(btn_lv10)
 	nodo_panel_admin.add_child(vbox)
 	$CapaUI.add_child(nodo_panel_admin)
 # ==========================================
@@ -3552,6 +3671,33 @@ func abrir_tienda_cartas():
 	
 	var vbox = VBoxContainer.new()
 	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+
+	var btn_generar = Button.new()
+	var costo_gen = 120 + int(Datos.habilidades_actor.get("nivel_general", 1) * 35)
+	btn_generar.text = "🧪 Generar Técnica Aleatoria ($" + str(costo_gen) + ")"
+	btn_generar.custom_minimum_size = Vector2(250, 50)
+	btn_generar.pressed.connect(func():
+		if Datos.economia["dinero"] < costo_gen:
+			mostrar_alerta("Sin fondos", "Necesitas $" + str(costo_gen) + " para generar una técnica nueva.")
+			return
+		var pools = _obtener_pools_cartas_por_rareza()
+		var pesos = _ajustar_pesos_por_curso(_pesos_base_por_nivel(Datos.habilidades_actor.get("nivel_general", 1)), "medio")
+		var rareza = _elegir_rareza_por_pesos(pesos)
+		var id_new = _elegir_carta_por_rareza(pools, rareza)
+		if id_new == "":
+			mostrar_alerta("Sin carta", "No se pudo generar una carta en este momento.")
+			return
+		Datos.economia["dinero"] -= costo_gen
+		var id_inst = Datos.crear_instancia_carta(id_new)
+		if id_inst == "":
+			mostrar_alerta("Error", "No se pudo crear la técnica generada.")
+			return
+		Datos.mazo_jugador.append(id_inst)
+		Datos.mazo_disponible.append(id_inst)
+		actualizar_interfaz()
+		mostrar_alerta("🧪 Técnica generada", "Obtuviste: " + Datos.catalogo_cartas[id_new]["nombre"] + " (" + Datos.catalogo_cartas[id_new]["rareza"] + ")")
+	)
+	vbox.add_child(btn_generar)
 	
 	for id_c in Datos.mercado_hoy:
 		var info = Datos.catalogo_cartas[id_c]
