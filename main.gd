@@ -572,7 +572,11 @@ func actualizar_ui_balasim(nombre_jefe):
 	# --- NUEVO: PREVISUALIZACIÓN ---
 	var proyeccion = calcular_puntos_proyectados()
 	var texto_proyeccion = ""
-	if proyeccion > 0: texto_proyeccion = " (💥 " + str(proyeccion) + " pts)"
+	if proyeccion.get("promedio", 0) > 0:
+		if proyeccion.get("hay_rng_critico", false):
+			texto_proyeccion = " (💥 " + str(proyeccion.get("minimo", 0)) + "-" + str(proyeccion.get("maximo", 0)) + " pts)"
+		else:
+			texto_proyeccion = " (💥 " + str(proyeccion.get("promedio", 0)) + " pts)"
 
 	label_jefe.text = "⚔️ " + nombre_jefe + "\nExigencia: " + str(poder_acumulado_turno) + " / " + str(exigencia_director)
 	label_poder_jugador.text = "Rondas: " + str(rondas_restantes) + " | Seleccionadas: " + str(seleccion_actual_nodos.size()) + "/" + str(limite_visual)
@@ -2235,7 +2239,18 @@ func obtener_bono_habilidad_por_arquetipo(arq_carta: String) -> int:
 func calcular_puntos_proyectados() -> int:
 	var puntos_proyectados = 0
 	var multiplicador_proyectado = 1.0
+	var min_rng = 0
+	var max_rng = 0
+	var hay_rng_critico = false
 	var arq_jefe = casting_data_actual.get("arquetipo", "comercial")
+	var mi_arq = obtener_arquetipo_dominante()
+	var mi_estres = Datos.stats_actor.get("estres", 0)
+	var nivel_actual = Datos.habilidades_actor.get("nivel_general", 1)
+	var mi_ego = Datos.stats_actor.get("ego", 0)
+	var hay_combo_activo = _hay_combo_seleccionado()
+	var prob_critico_base = 0.0
+	if mi_estres >= 40:
+		prob_critico_base = clamp(mi_estres / 250.0, 0.0, 0.38)
 	
 	for id_c in seleccion_actual_ids:
 		if not Datos.catalogo_cartas.has(id_c):
@@ -2250,19 +2265,10 @@ func calcular_puntos_proyectados() -> int:
 		# Balance: Cada 5 puntos en tu habilidad te da +1 de Poder Base a la carta
 		var poder_escalado = poder_base + int(bono_stat / 5.0)
 # --- 👑 EGO ESCALABLE INFINITO (Proyección) ---
-		var mi_ego = Datos.stats_actor.get("ego", 0)
-		var nivel_actual = Datos.habilidades_actor.get("nivel_general", 1)
-		
 		if mi_ego >= 50:
-			var bono_ego = int((mi_ego - 50) * (1.0 + (nivel_actual / 10.0)))
+			var bono_ego = calcular_bono_ego_suavizado(mi_ego, nivel_actual)
 			poder_escalado += bono_ego
-			mostrar_texto_flotante("👑 Ego: +" + str(bono_ego), label_jefe, Color(1, 0.8, 0.2))
-		# --- 💥 PROYECCIÓN DE ESTRÉS (Promedio) ---
-		var mi_estres = Datos.stats_actor.get("estres", 0)
-		if mi_estres >= 40:
-			# Como el crítico es al azar (RNG), proyectamos un multiplicador promedio para no mentirle al jugador
-			var prob_critico = mi_estres / 200.0 # Ej: 50% = 0.25 extra promedio
-			multiplicador_proyectado *= (1.0 + prob_critico)
+
 		# --- 2. MULTIPLICADOR POR DEBILIDAD DEL JEFE ---
 		var multi_tipo = 1.0
 		if arq_jefe == "metodo" and arq_carta == "instinto": multi_tipo = 1.5
@@ -2277,7 +2283,41 @@ func calcular_puntos_proyectados() -> int:
 		elif arq_jefe == "instinto" and arq_carta == "metodo": multi_tipo = 0.5
 		
 		# Aplicamos el multiplicador al poder ya escalado por tus stats
-		puntos_proyectados += int(poder_escalado * multi_tipo)
+		var poder_base_carta = int(poder_escalado * multi_tipo)
+		puntos_proyectados += poder_base_carta
+
+		var prob_critico = prob_critico_base
+		var valor_min = poder_base_carta
+		var valor_max = poder_base_carta
+		if mi_arq == "metodo":
+			prob_critico = min(prob_critico_base * 1.25, 0.38)
+			valor_min = int(poder_base_carta * 0.85)
+			valor_max = int(poder_base_carta * 1.5)
+			hay_rng_critico = hay_rng_critico or prob_critico > 0.0
+		elif mi_arq == "forma":
+			prob_critico = prob_critico_base * 0.5
+			var flat_forma = 2 + int(nivel_actual / 8.0)
+			valor_max = poder_base_carta + flat_forma
+			hay_rng_critico = hay_rng_critico or prob_critico > 0.0
+		elif mi_arq == "instinto":
+			if hay_combo_activo:
+				prob_critico = 0.25
+				var flat_instinto = 3 + int(nivel_actual / 6.0)
+				valor_max = poder_base_carta + flat_instinto
+				hay_rng_critico = true
+			else:
+				prob_critico = 0.0
+		else:
+			if prob_critico > 0.0:
+				valor_max = int(poder_base_carta * 1.5)
+				hay_rng_critico = true
+
+		if prob_critico > 0.0:
+			max_rng += valor_max
+			min_rng += valor_min
+		else:
+			max_rng += poder_base_carta
+			min_rng += poder_base_carta
 		
 		if info.has("efecto"):
 			var ef = info["efecto"]
@@ -2301,7 +2341,13 @@ func calcular_puntos_proyectados() -> int:
 	if mi_arq == "metodo" and Datos.stats_actor["estres"] >= 50:
 		var multiplicador_locura = 1.0 + (Datos.perfil_actor.get("metodo", 0) / 100.0)
 		multiplicador_proyectado *= multiplicador_locura
-	return int(puntos_proyectados * multiplicador_proyectado)
+	var promedio = int(puntos_proyectados * multiplicador_proyectado)
+	return {
+		"promedio": promedio,
+		"minimo": int(min_rng * multiplicador_proyectado),
+		"maximo": int(max_rng * multiplicador_proyectado),
+		"hay_rng_critico": hay_rng_critico
+	}
 func _on_btn_actuar_pressed():
 	var cartas_vivas = 0
 	for hijo in contenedor_mano.get_children():
@@ -2316,6 +2362,14 @@ func _on_btn_actuar_pressed():
 	var robar_cartas_extra = 0
 	
 	var arq_jefe = casting_data_actual.get("arquetipo", "comercial")
+	var mi_arq = obtener_arquetipo_dominante()
+	var mi_estres = Datos.stats_actor.get("estres", 0)
+	var nivel_actual = Datos.habilidades_actor.get("nivel_general", 1)
+	var mi_ego = Datos.stats_actor.get("ego", 0)
+	var hay_combo_activo = _hay_combo_seleccionado()
+	var prob_critico_base = 0.0
+	if mi_estres >= 40:
+		prob_critico_base = clamp(mi_estres / 250.0, 0.0, 0.38)
 	
 	for id_c in seleccion_actual_ids:
 		if not Datos.catalogo_cartas.has(id_c):
@@ -2331,22 +2385,38 @@ func _on_btn_actuar_pressed():
 		var poder_escalado = poder_base + int(bono_stat / 5.0)
 
 		# --- 👑 EGO ESCALABLE INFINITO (Bono de Presencia) ---
-		var mi_ego = Datos.stats_actor.get("ego", 0)
-		var nivel_actual = Datos.habilidades_actor.get("nivel_general", 1)
-		
 		if mi_ego >= 50:
-			var bono_ego = int((mi_ego - 50) * (1.0 + (nivel_actual / 10.0)))
+			var bono_ego = calcular_bono_ego_suavizado(mi_ego, nivel_actual)
 			poder_escalado += bono_ego
 			mostrar_texto_flotante("👑 Ego: +" + str(bono_ego), label_jefe, Color(1, 0.8, 0.2))
 		
 		# --- 💥 ESTRÉS (Crítico de Actuación Visceral) ---
-		var mi_estres = Datos.stats_actor.get("estres", 0)
-		if mi_estres >= 40:
-			var prob_critico = int(mi_estres / 2.0)
-			if randi_range(1, 100) <= prob_critico:
-				poder_escalado *= 2 
-				escribir_log_batalla("💥 ¡ACTUACIÓN EXPLOSIVA! El estrés duplicó el poder de tu carta: " + info["nombre"])
-				mostrar_texto_flotante("💥 ¡CRÍTICO!", label_jefe, Color(1, 0.2, 0.2), 1.5)
+		var prob_critico = prob_critico_base
+		if mi_arq == "metodo":
+			prob_critico = min(prob_critico_base * 1.25, 0.38)
+			if randf() <= prob_critico:
+				poder_escalado = int(poder_escalado * 1.5)
+				escribir_log_batalla("💥 Método al límite: crítico x1.5 en " + info["nombre"])
+				mostrar_texto_flotante("💥 CRÍTICO x1.5", label_jefe, Color(1, 0.2, 0.2), 1.4)
+			else:
+				poder_escalado = int(poder_escalado * 0.85)
+				escribir_log_batalla("⚠️ Método inestable: " + info["nombre"] + " perdió potencia.")
+		elif mi_arq == "forma":
+			prob_critico = prob_critico_base * 0.5
+			if randf() <= prob_critico:
+				var flat_forma = 2 + int(nivel_actual / 8.0)
+				poder_escalado += flat_forma
+				escribir_log_batalla("🎯 Forma precisa: +" + str(flat_forma) + " poder en " + info["nombre"])
+		elif mi_arq == "instinto":
+			if hay_combo_activo and randf() <= 0.25:
+				var flat_instinto = 3 + int(nivel_actual / 6.0)
+				poder_escalado += flat_instinto
+				escribir_log_batalla("⚡ Instinto conectado al combo: +" + str(flat_instinto) + " poder en " + info["nombre"])
+				mostrar_texto_flotante("⚡ PROC INSTINTO", label_jefe, Color(0.6, 0.9, 1.0), 1.2)
+		elif randf() <= prob_critico:
+			poder_escalado = int(poder_escalado * 1.5)
+			escribir_log_batalla("💥 ¡CRÍTICO! El estrés impulsó tu carta: " + info["nombre"])
+			mostrar_texto_flotante("💥 ¡CRÍTICO!", label_jefe, Color(1, 0.2, 0.2), 1.5)
 		
 		# --- 2. MULTIPLICADOR POR DEBILIDAD DEL JEFE ---
 		var multi_tipo = 1.0
@@ -2379,7 +2449,6 @@ func _on_btn_actuar_pressed():
 				else: puntos_ronda -= info["poder"] 
 				
 	# --- 🌟 PODER ACTIVO DEL MÉTODO (RIESGO/RECOMPENSA) ---
-	var mi_arq = obtener_arquetipo_dominante()
 	if mi_arq == "metodo" and Datos.stats_actor.get("estres", 0) >= 50:
 		var multiplicador_locura = 1.0 + (Datos.perfil_actor.get("metodo", 0) / 100.0)
 		multiplicador_ronda *= multiplicador_locura
