@@ -996,16 +996,26 @@ func _on_boton_dormir_pressed():
 	
 func comprobar_level_up():
 	var subio_nivel = false
+	
+	if Datos.habilidades_actor.get("xp_requerida", 0) <= 10:
+		Datos.habilidades_actor["xp_requerida"] = 100
+		
+	# 🚨 FRENO ANTI-DESBORDAMIENTO (Previene el congelamiento)
+	var limite_seguridad_xp = 0
+		
 	while Datos.habilidades_actor["xp_actual"] >= Datos.habilidades_actor["xp_requerida"]:
+		limite_seguridad_xp += 1
+		if limite_seguridad_xp > 100 or Datos.habilidades_actor["xp_requerida"] <= 0:
+			break # Si da más de 100 vueltas o la matemática se rompe, aborta el bucle.
+			
 		Datos.habilidades_actor["xp_actual"] -= Datos.habilidades_actor["xp_requerida"] 
 		Datos.habilidades_actor["nivel_general"] += 1
 		
-		# --- NUEVO: ESCALADO EXPONENCIAL ---
-		# Cada nivel cuesta un 40% más que el anterior
 		Datos.habilidades_actor["xp_requerida"] = int(Datos.habilidades_actor["xp_requerida"] * 1.4) 
 		subio_nivel = true
 		
-	if subio_nivel: panel_level_up.visible = true
+	if subio_nivel: 
+		panel_level_up.visible = true
 
 func aplicar_stat_y_cerrar():
 	recalcular_stats_pasivos()
@@ -2357,18 +2367,23 @@ func _on_btn_actuar_pressed():
 		var multiplicador_locura = 1.0 + (Datos.perfil_actor.get("metodo", 0) / 100.0)
 		multiplicador_ronda *= multiplicador_locura
 	
-	# 2. BUSCAR COMBOS
+	# 2. BUSCAR COMBOS (CON FRENO ANTI-CRASH)
 	var texto_combo = ""
 	if seleccion_actual_ids.size() >= 2:
 		for id_combo in Datos.combos_balasim.keys():
 			var combo = Datos.combos_balasim[id_combo]
+			
+			# 🚨 FRENO: Verificamos que el combo sea válido antes de leerlo
+			if not combo.has("cartas") or combo["cartas"].size() < 2: 
+				continue
+				
 			var req1 = combo["cartas"][0]
 			var req2 = combo["cartas"][1]
 			
 			if seleccion_actual_ids.has(req1) and seleccion_actual_ids.has(req2):
 				if req1 == req2 and seleccion_actual_ids.count(req1) < 2: continue
-				multiplicador_ronda *= combo["multiplicador"]
-				texto_combo += combo["nombre_combo"] + "\n"
+				multiplicador_ronda *= combo.get("multiplicador", 1.0)
+				texto_combo += combo.get("nombre_combo", "Combo Secreto") + "\n"
 				break
 	
 	var puntos_finales = int(puntos_ronda * multiplicador_ronda)
@@ -2382,9 +2397,9 @@ func _on_btn_actuar_pressed():
 	if texto_combo != "":
 		color_daño = Color.CYAN
 		escala_daño = 1.5
-		mostrar_texto_flotante("🔥 ¡COMBO!", barra_exigencia, Color.ORANGE, 1.5)
+		mostrar_texto_flotante("🔥 ¡COMBO!", label_jefe, Color.ORANGE, 1.5)
 		
-	mostrar_texto_flotante(texto_daño, barra_exigencia, color_daño, escala_daño)
+	mostrar_texto_flotante(texto_daño, label_jefe, color_daño, escala_daño)
 	
 	# LOG DE BATALLA Y COMBOS
 	escribir_log_batalla("🎭 Actuaste. Generaste " + str(puntos_finales) + " puntos.")
@@ -2419,65 +2434,6 @@ func _on_btn_actuar_pressed():
 	else:
 		ejecutar_accion_jefe() 
 		repartir_mano_balasim(false) 
-		
-		if robar_cartas_extra > 0: 
-			var mazo_temp = Datos.mazo_jugador.duplicate()
-			mazo_temp.shuffle()
-			for i in range(robar_cartas_extra):
-				if mazo_temp.size() > 0: crear_boton_carta_en_mesa(mazo_temp[i])
-
-		if mulligans_restantes > 0: btn_mulligan.disabled = false
-		actualizar_ui_balasim(label_jefe.text.split("\n")[0].replace("⚔️ ", ""))
-		poder_acumulado_turno += puntos_finales
-
- # --- SUPER FEEDBACK VISUAL ---
- var texto_daño = "🎭 +" + str(puntos_finales) + " Pts!"
- var color_daño = Color.GREEN
- var escala_daño = 1.0
-
- if texto_combo != "":
- 	color_daño = Color.CYAN
- 	escala_daño = 1.5
- 	mostrar_texto_flotante("🔥 ¡COMBO!", barra_exigencia, Color.ORANGE, 1.5)
-		
-
-
- mostrar_texto_flotante(texto_daño, barra_exigencia, color_daño, escala_daño)
-
- # LOG DE BATALLA Y COMBOS
- # ... (El resto de tu código igual)
-	escribir_log_batalla("🎭 Actuaste. Generaste " + str(puntos_finales) + " puntos.")
-	if texto_combo != "": escribir_log_batalla("🔥 COMBO ACTIVADO: " + texto_combo.replace("\n", " "))
-	
-	# --- CASTIGO DE CARTAS DE PELIGRO EN MANO ---
-	for hijo in contenedor_mano.get_children():
-		if not hijo.is_queued_for_deletion() and not hijo in seleccion_actual_nodos:
-			if "Pánico" in hijo.text:
-				Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] + 15, 0, 100)
-				mostrar_alerta("💥 Pánico Acumulado", "No lidiaste con tu Ataque de Pánico. (+15 Estrés)")
-				
-	# 3. QUEMAR CARTAS (Mazo Semanal) Y LIMPIAR MESA
-	for id_c in seleccion_actual_ids:
-		Datos.mazo_disponible.erase(id_c) 
-		
-	for nodo in seleccion_actual_nodos:
-		if is_instance_valid(nodo): nodo.queue_free()
-	seleccion_actual_nodos.clear()
-	seleccion_actual_ids.clear()
-	
-	# 4. RESOLUCIÓN DE LA RONDA
-	if poder_acumulado_turno >= exigencia_director:
-		panel_balasim.visible = false
-		resolver_rutina_general(true)
-		return
-		
-	rondas_restantes -= 1
-	if rondas_restantes <= 0:
-		panel_balasim.visible = false
-		resolver_rutina_general(false)
-	else:
-		ejecutar_accion_jefe() # El Jefe Ataca
-		repartir_mano_balasim(false) # Rellena la mano
 		
 		if robar_cartas_extra > 0: 
 			var mazo_temp = Datos.mazo_jugador.duplicate()
@@ -2528,22 +2484,27 @@ func ejecutar_accion_jefe():
 		var llaves_peligro = ["nervios", "panico"]
 		inyectar_carta_peligro(llaves_peligro.pick_random())
 func inyectar_carta_peligro(id_peligro):
-	# --- 🌟 ESCUDO CLÁSICO DE FORMA (ESCALADO INFINITO) ---
+	# --- 🌟 ESCUDO CLÁSICO DE FORMA ---
 	var mi_arquetipo = obtener_arquetipo_dominante()
 	var nivel_arq = Datos.perfil_actor.get(mi_arquetipo, 0)
 
 	if mi_arquetipo == "forma":
 		var prob_bloqueo = clamp(25 + nivel_arq, 25, 90) 
 		if randi_range(1, 100) <= prob_bloqueo:
-			escribir_log_batalla("🛡️ Disciplina Clásica: ¡Bloqueaste el ataque mental (" + str(prob_bloqueo) + "% de prob)!")
-			mostrar_alerta("🛡️ Foco Inquebrantable", "El jefe intentó estresarte, pero tu estricta disciplina técnica te protegió de la distracción.")
+			escribir_log_batalla("🛡️ Disciplina: ¡Bloqueaste el ataque mental (" + str(prob_bloqueo) + "%)!")
 			return
 			
 	if contenedor_mano.get_child_count() >= 6:
 		var victima = contenedor_mano.get_child(0)
 		if is_instance_valid(victima): victima.queue_free()
 
-	var info = Datos.catalogo_cartas[id_peligro]
+	# 🚨 FRENO ANTI-CRASH: Si la carta no existe en tu Base de Datos, la crea mágicamente para no crashear
+	var info = {"nombre": "Ataque de Pánico", "poder": 0}
+	if Datos.catalogo_cartas.has(id_peligro):
+		info = Datos.catalogo_cartas[id_peligro]
+	elif id_peligro == "nervios":
+		info = {"nombre": "Nerviosismo", "poder": 0}
+
 	var btn_peligro = Button.new()
 	btn_peligro.text = "⚠️ " + info["nombre"] + "\n(Click 4 veces para calmarte)"
 	btn_peligro.custom_minimum_size = Vector2(120, 160)
@@ -2551,15 +2512,8 @@ func inyectar_carta_peligro(id_peligro):
 	btn_peligro.set_meta("es_peligro", true)
 	btn_peligro.set_meta("clicks", 4)
 
-	# --- CORRECCIÓN DEL BUCLE INFINITO ---
-	# 1. PRIMERO metemos la carta a la pantalla
-	contenedor_mano.add_child(btn_peligro) 
-
-	# 2. LUEGO creamos la animación y la atamos al botón (bind_node)
-	var tween = get_tree().create_tween().bind_node(btn_peligro).set_loops()
-	btn_peligro.modulate = Color(1.0, 0.2, 0.2)
-	tween.tween_property(btn_peligro, "modulate", Color(0.4, 0.0, 0.0), 0.4)
-	tween.tween_property(btn_peligro, "modulate", Color(1.0, 0.2, 0.2), 0.4)
+	# Adiós animación problemática, hola color fijo seguro
+	btn_peligro.modulate = Color(1.0, 0.3, 0.3) 
 
 	btn_peligro.pressed.connect(func():
 		var c = btn_peligro.get_meta("clicks") - 1
@@ -2569,42 +2523,47 @@ func inyectar_carta_peligro(id_peligro):
 		else:
 			btn_peligro.set_meta("clicks", c)
 			btn_peligro.text = "⚠️ " + info["nombre"] + "\n(" + str(c) + " clicks más)"
-			# Un pequeño temblor al darle click
 			btn_peligro.position.x += randf_range(-5, 5)
 			btn_peligro.position.y += randf_range(-5, 5)
 	)
+	
+	contenedor_mano.add_child(btn_peligro) 
 	escribir_log_batalla("💥 El Jefe saboteó tu mente con: " + info["nombre"])
 # --- REPARTIDOR DE CARTAS ---
 # --- REPARTIDOR DE CARTAS ---
-func repartir_mano_balasim(limpiar_mesa):
-	var cartas_en_mesa = 0
-	
-	if limpiar_mesa:
-		for hijo in contenedor_mano.get_children(): 
-			hijo.queue_free()
-	else:
-		# Truco experto: Contar solo las cartas que NO se están borrando
+func repartir_mano_balasim(es_inicio):
+	if es_inicio:
 		for hijo in contenedor_mano.get_children():
-			if not hijo.is_queued_for_deletion() and hijo is Button:
-				cartas_en_mesa += 1
-	
-	var tamano_mano_max = clamp(3 + int(Datos.habilidades_actor["memoria"] / 2), 3, 7)
-	var a_robar = tamano_mano_max - cartas_en_mesa
-	
-	# ... código anterior ...
-	if a_robar <= 0: return
-	
-	var mazo_temp = Datos.mazo_disponible.duplicate() # <--- AHORA TOMA LAS DISPONIBLES
-	mazo_temp.shuffle() 
-	
-	for i in range(min(a_robar, mazo_temp.size())):
-		crear_boton_carta_en_mesa(mazo_temp[i])
+			hijo.queue_free()
+		Datos.mazo_disponible = Datos.mazo_jugador.duplicate()
+		Datos.mazo_disponible.shuffle()
 		
-	if Datos.mazo_disponible.is_empty(): # <--- MENSAJE ACTUALIZADO
-		var lbl = Label.new()
-		lbl.text = "⚠️ CARTAS AGOTADAS\nTe quedaste sin técnicas esta semana.\nUsa tu Carisma base dando a 'Actuar'."
-		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		contenedor_mano.add_child(lbl)
+	var cartas_vivas = 0
+	for hijo in contenedor_mano.get_children():
+		if not hijo.is_queued_for_deletion():
+			cartas_vivas += 1
+			
+	var limite_seguridad = 0
+	# 🚨 FRENO ANTI-DUPLICADOS: No puedes robar más cartas de las que posees en total
+	var tope_mano = min(6, Datos.mazo_jugador.size())
+	
+	while cartas_vivas < tope_mano and limite_seguridad < 20:
+		limite_seguridad += 1
+		
+		if Datos.mazo_disponible.is_empty():
+			# Si ya tienes todo tu mazo en la mano, paramos de robar inmediatamente
+			if cartas_vivas >= Datos.mazo_jugador.size():
+				break
+			Datos.mazo_disponible = Datos.mazo_jugador.duplicate()
+			Datos.mazo_disponible.shuffle()
+			
+		if Datos.mazo_disponible.is_empty():
+			break
+			
+		var id_c = Datos.mazo_disponible.pick_random()
+		crear_boton_carta_en_mesa(id_c)
+		Datos.mazo_disponible.erase(id_c)
+		cartas_vivas += 1
 
 func crear_boton_carta_en_mesa(id_c):
 	var info = Datos.catalogo_cartas[id_c]
