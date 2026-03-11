@@ -194,7 +194,17 @@ var catalogo_cartas = {
 	"salto_fe": {"nombre": "Salto de Fe", "rareza": "Épica", "poder": 0, "efecto": "doblar_poder_actual", "valor": 0, "desc": "Te lanzas al vacío escénico. (Poder x2)"},
 	"quitar_peluca": {"nombre": "Quitarse la Peluca", "rareza": "Épica", "poder": 20, "efecto": "bajar_exigencia", "valor": 10, "desc": "Shock total. (-10 Exigencia)"},
 	"director_despedido": {"nombre": "Despedir al Director", "rareza": "Legendaria", "poder": 85, "desc": "Ahora tú diriges la película."},
-	"oscar_honorifico": {"nombre": "Premio a la Trayectoria", "rareza": "Legendaria", "poder": 90, "efecto": "curar_estres", "valor": 50, "desc": "Ya no tienes nada que probar. (Cura 50 Estrés)"}
+	"oscar_honorifico": {"nombre": "Premio a la Trayectoria", "rareza": "Legendaria", "poder": 90, "efecto": "curar_estres", "valor": 50, "desc": "Ya no tienes nada que probar. (Cura 50 Estrés)"},
+	
+	# --- EXPANSIÓN 5: SHOWTIME ---
+	"respirar_personaje": {"nombre": "Respirar Personaje", "rareza": "Común", "poder": 2, "efecto": "curar_estres", "valor": 6, "desc": "Te centras y vuelves al papel. (Cura 6 Estrés)"},
+	"eco_de_dialogo": {"nombre": "Eco de Diálogo", "rareza": "Común", "poder": 1, "efecto": "robar_carta", "valor": 1, "desc": "Repites la última frase para comprar tiempo. (+1 Carta)"},
+	"paso_marcado": {"nombre": "Paso Marcado", "rareza": "Rara", "poder": 6, "efecto": "mas_jugadas", "valor": 1, "desc": "El bloqueo escénico sale perfecto. (+1 Jugada)"},
+	"mirada_hielo": {"nombre": "Mirada de Hielo", "rareza": "Rara", "poder": 7, "efecto": "bajar_exigencia", "valor": 5, "desc": "Congelas al casting. (-5 Exigencia)"},
+	"ovacion_ensayo": {"nombre": "Ovación de Ensayo", "rareza": "Épica", "poder": 16, "efecto": "curar_estres", "valor": 24, "desc": "El equipo técnico te aplaude sin parar. (Cura 24 Estrés)"},
+	"cambio_de_mascara": {"nombre": "Cambio de Máscara", "rareza": "Épica", "poder": 14, "efecto": "multiplicar_poder", "valor": 1.8, "desc": "Entras y sales del personaje en segundos. (Poder x1.8)"},
+	"silencio_que_mata": {"nombre": "Silencio que Mata", "rareza": "Legendaria", "poder": 38, "efecto": "bajar_exigencia", "valor": 35, "desc": "Ni el jurado se atreve a respirar. (-35 Exigencia)"},
+	"metodo_camaleon": {"nombre": "Método Camaleón", "rareza": "Legendaria", "poder": 30, "efecto": "escalar_carisma", "valor": 8, "desc": "Adaptas tu energía a cualquier escena. (Escala con Carisma x8)"}
 }
 
 # ==========================================
@@ -207,7 +217,7 @@ const ARQUETIPOS_CARTAS = {
 		"lagrima_solitaria", "mirada_juzgadora", "voz_quebrada", "berrinche", "monologo_intenso",
 		"ataque_panico_real", "llanto_desconsolado", "revelacion_traicion", "mirada_de_muerte",
 		"amenaza_sutil", "masajear_sienes", "romper_llanto", "llorar_sangre", "monologo_villano",
-		"metodo_absoluto", "actuacion_trascendental", "director_llora", "renacimiento_artistico"
+		"metodo_absoluto", "actuacion_trascendental", "director_llora", "renacimiento_artistico", "respirar_personaje", "metodo_camaleon"
 	],
 	"fisico": [
 		"tropiezo_gracioso", "paso_atras", "caida_dramatica", "bofetada_falsa", "golpe_en_la_mesa",
@@ -217,13 +227,13 @@ const ARQUETIPOS_CARTAS = {
 	"forma": [
 		"voz_profunda", "tos_falsa", "tartamudeo_calculado", "carraspeo", "mirar_apuntador",
 		"susurro", "pausa_dramatica", "proyeccion_vocal", "monologo_acelerado", "ajustar_gafas",
-		"tomar_agua", "susurro_amenazante", "perfeccion_absoluta"
+		"tomar_agua", "susurro_amenazante", "perfeccion_absoluta", "eco_de_dialogo"
 	],
 	"comercial": [
 		"carisma_magnetico", "cejas_arqueadas", "sonrisa_falsa", "asentir_lentamente", "jugar_cabello",
 		"pose_generica", "ajuste_corbata", "encoger_hombros", "sonrisa_timida", "sonrisa_congelada",
 		"senal_de_paz", "risa_sarcastica", "apuntar_dedo", "discurso_inspirador", "divo_insuperable",
-		"premio_oscar_prematuro", "ovacion_de_pie", "ego_infinito", "risa_burlona", "oscar_honorifico"
+		"premio_oscar_prematuro", "ovacion_de_pie", "ego_infinito", "risa_burlona", "oscar_honorifico", "ovacion_ensayo"
 	],
 	"instinto": [
 		"risa_nerviosa", "silencio_incomodo", "mirada_al_reloj", "rascarse_cabeza", "bostezo_disimulado",
@@ -231,7 +241,7 @@ const ARQUETIPOS_CARTAS = {
 		"mirada_desafiante", "risa_maniaca", "improvisar_cancion", "ignorar_director",
 		"romper_cuarta_pared", "beso_no_guionizado", "revelacion_chocante", "improvisacion_maestra",
 		"insulto_director", "control_mental_set", "romper_el_universo", "director_despedido",
-		"salto_fe", "quitar_peluca", "mirada_de_reojo", "basura_nervios", "basura_panico"
+		"salto_fe", "quitar_peluca", "mirada_de_reojo", "paso_marcado", "mirada_hielo", "cambio_de_mascara", "silencio_que_mata", "basura_nervios", "basura_panico"
 	]
 }
 
@@ -246,11 +256,48 @@ const RANGOS_EFECTO = {
 	"sacrificar_energia": {"Común": Vector2(1, 1), "Rara": Vector2(1, 1), "Épica": Vector2(1, 2), "Legendaria": Vector2(2, 3)},
 	"restaurar_mulligan": {"Común": Vector2(1, 1), "Rara": Vector2(1, 1), "Épica": Vector2(1, 2), "Legendaria": Vector2(2, 3)}
 }
+const COSTE_BASE_RAREZA = {
+	"Común": 70,
+	"Rara": 130,
+	"Épica": 230,
+	"Legendaria": 380,
+	"Peligro": 5
+}
+
+const MULTIPLICADOR_REVENTA_RAREZA = {
+	"Común": 0.45,
+	"Rara": 0.48,
+	"Épica": 0.52,
+	"Legendaria": 0.58,
+	"Peligro": 0.0
+}
+
+const PESO_EFECTO_ECONOMIA = {
+	"bajar_exigencia": 7.0,
+	"curar_estres": 2.0,
+	"robar_carta": 13.0,
+	"mas_jugadas": 18.0,
+	"multiplicar_poder": 30.0,
+	"escalar_carisma": 10.0,
+	"sacrificar_energia": -12.0,
+	"doblar_poder_actual": 32.0,
+	"restaurar_mulligan": 15.0,
+	"basura": -35.0
+}
+
+const META_PODER_RAREZA = {
+	"Común": Vector2(1, 4),
+	"Rara": Vector2(4, 9),
+	"Épica": Vector2(12, 23),
+	"Legendaria": Vector2(26, 60),
+	"Peligro": Vector2(-12, 0)
+}
 
 func normalizar_catalogo_cartas():
 	_aplicar_arquetipos_cartas()
 	_balancear_efectos_cartas()
-
+	#_balancear_poder_cartas()
+	_generar_economia_cartas()
 func _aplicar_arquetipos_cartas():
 	for arq in ARQUETIPOS_CARTAS.keys():
 		for id in ARQUETIPOS_CARTAS[arq]:
@@ -273,7 +320,52 @@ func _balancear_efectos_cartas():
 			var rango = RANGOS_EFECTO[ef][rareza]
 			var valor = float(carta.get("valor", rango.x))
 			carta["valor"] = clamp(valor, rango.x, rango.y)
+func balancear_poder_cartas():
+	for id in catalogo_cartas.keys():
+		var carta = catalogo_cartas[id]
+		var rareza = carta.get("rareza", "Común")
+		if not META_PODER_RAREZA.has(rareza):
+			continue
 
+		var rango = META_PODER_RAREZA[rareza]
+		var poder_actual = float(carta.get("poder", 0.0))
+		carta["poder"] = int(round(clamp(poder_actual, rango.x, rango.y)))
+
+func _generar_economia_cartas():
+	for id in catalogo_cartas.keys():
+		var carta = catalogo_cartas[id]
+		var rareza = carta.get("rareza", "Común")
+		var base = float(COSTE_BASE_RAREZA.get(rareza, 80))
+		var poder = float(carta.get("poder", 0))
+		var efecto = str(carta.get("efecto", ""))
+		var valor_efecto = float(carta.get("valor", 0.0))
+
+		var peso = float(PESO_EFECTO_ECONOMIA.get(efecto, 0.0))
+		var coste = base + (poder * 9.0) + (valor_efecto * peso)
+
+		# Penalizar cartas de riesgo para evitar roturas de economía.
+		if efecto == "sacrificar_energia":
+			coste -= 20.0
+		elif efecto == "basura":
+			coste = 5.0
+
+		coste = clamp(coste, 5.0, 1200.0)
+		var valor_compra = int(round(coste / 5.0) * 5)
+		var mult_reventa = float(MULTIPLICADOR_REVENTA_RAREZA.get(rareza, 0.45))
+		var valor_reventa = int(round((valor_compra * mult_reventa) / 5.0) * 5)
+
+		carta["valor_compra"] = valor_compra
+		carta["valor_reventa"] = max(valor_reventa, 0)
+
+func calcular_precio_compra_carta(id_carta: String) -> int:
+	if not catalogo_cartas.has(id_carta):
+		return 0
+	return int(catalogo_cartas[id_carta].get("valor_compra", 100))
+
+func calcular_precio_reventa_carta(id_carta: String) -> int:
+	if not catalogo_cartas.has(id_carta):
+		return 0
+	return int(catalogo_cartas[id_carta].get("valor_reventa", 20))
 # --- MEGA RECETAS DE CRAFTEO ---
 # ==========================================
 # 🔮 MEGA RECETAS DE CRAFTEO (De Común a Legendaria)
@@ -315,7 +407,16 @@ var recetas_crafteo = {
 	"llorar_sangre": ["romper_llanto", "mirada_intensa"],
 	"quitar_peluca": ["tomar_agua", "caida_dramatica"],
 	"director_despedido": ["monologo_villano", "insulto_director"],
-	"oscar_honorifico": ["premio_oscar_prematuro", "director_despedido"]
+	"oscar_honorifico": ["premio_oscar_prematuro", "director_despedido"],
+	# --- EXPANSIÓN 5 ---
+	"respirar_personaje": ["suspiro_profundo", "tragar_saliva"],
+	"eco_de_dialogo": ["mirar_apuntador", "tomar_agua"],
+	"paso_marcado": ["pose_generica", "ajuste_corbata"],
+	"mirada_hielo": ["cejas_arqueadas", "mirada_de_reojo"],
+	"ovacion_ensayo": ["romper_llanto", "grito_de_batalla"],
+	"cambio_de_mascara": ["paso_marcado", "romper_cuarta_pared"],
+	"silencio_que_mata": ["amenaza_sutil", "cambio_de_mascara"],
+	"metodo_camaleon": ["ovacion_ensayo", "renacimiento_artistico"]
 }
 
 # ==========================================
@@ -338,7 +439,10 @@ var combos_balasim = {
 	"preparacion_combate": {"cartas": ["quitarse_chaqueta", "apretar_punos"], "multiplicador": 2.0, "nombre_combo": "¡Combo: Listo para Pelear! (x2.0)"},
 	"villano_clasico": {"cartas": ["monologo_villano", "risa_burlona"], "multiplicador": 2.5, "nombre_combo": "¡Combo: Mente Maestra! (x2.5)"},
 	"shock_teatral": {"cartas": ["quitar_peluca", "salto_fe"], "multiplicador": 3.0, "nombre_combo": "¡Combo: Giro Inesperado! (x3.0)"},
-	"toma_hostil": {"cartas": ["director_despedido", "mirada_de_muerte"], "multiplicador": 4.0, "nombre_combo": "¡Combo: Golpe de Estado en el Set! (x4.0)"}
+	"toma_hostil": {"cartas": ["director_despedido", "mirada_de_muerte"], "multiplicador": 4.0, "nombre_combo": "¡Combo: Golpe de Estado en el Set! (x4.0)"},
+	"calma_tensa": {"cartas": ["respirar_personaje", "mirada_hielo"], "multiplicador": 2.0, "nombre_combo": "¡Combo: Calma Tensa! (x2.0)"},
+	"doble_personaje": {"cartas": ["eco_de_dialogo", "cambio_de_mascara"], "multiplicador": 2.7, "nombre_combo": "¡Combo: Doble Personalidad! (x2.7)"},
+	"showrunner": {"cartas": ["silencio_que_mata", "metodo_camaleon"], "multiplicador": 4.5, "nombre_combo": "¡Combo: Showrunner Supremo! (x4.5)"}
 }
 
 # (Recuerda mantener tu var mazo_jugador aquí abajo)
@@ -643,6 +747,11 @@ func reiniciar_datos():
 # ==========================================
 # 🧑‍🤝‍🧑 GENERADOR DE NOMBRES Y USUARIOS
 # ==========================================
+
+func _ready():
+	randomize()
+	normalizar_catalogo_cartas()
+
 var nombres_npc = ["Juan", "María", "Carlos", "Ana", "Luis", "Elena", "Pedro", "Sofía", "Diego", "Laura", "Mónica", "Raúl"]
 var apellidos_npc = ["Pérez", "Gómez", "López", "Díaz", "Martínez", "García", "Ruiz", "Hernández"]
 var prefijos_user = ["user_", "teatro_fan_", "actor_wannabe_", "cine_", "soyel_", "anon_", "fan_"]
