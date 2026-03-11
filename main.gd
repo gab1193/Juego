@@ -708,7 +708,7 @@ func resolver_rutina_general(fue_exito):
 				base_aud += (c["influencia_equipo"] * 3) 
 				aforo_maximo = Datos.espacios_disponibles[Datos.mi_compania["id_espacio_actual"]]["capacidad_publico"]
 				
-			audiencia_final = base_aud + int(Datos.stats_actor["seguidores"] * 0.1) + c.get("hype_generado", 0)
+			audiencia_final = base_aud + int(Datos.stats_actor["seguidores"] * 0.1) + c.get("hype_generado", 0) + int(Datos.lista_contactos.size() * 2)
 			
 			if c.get("estado_tecnicos") == "sabotaje": audiencia_final = int(audiencia_final * 0.3)
 			elif estrellas <= 2: audiencia_final = int(audiencia_final * 0.5) 
@@ -883,18 +883,10 @@ func _on_btn_llamado_pressed():
 		casting_data_actual = Datos.proyectos_activos[id_unico]
 		
 		# Si la obra es tuya, pagas técnicos. Si no, vas directo a la batalla final.
-		if casting_data_actual.has("es_propia"): panel_tecnicos.visible = true
-		else: iniciar_skill_check("funcion")
-	elif evento_hoy.begins_with("Grabacion_"):
-		var id_unico = evento_hoy.replace("Grabacion_", "")
-		casting_data_actual = Datos.proyectos_activos[id_unico]
-		
-		# Si la obra es de tu Compañía Teatral, ¡tienes que pagarle a los técnicos!
 		if casting_data_actual.has("es_propia"):
 			panel_tecnicos.visible = true
 		else:
-			# Si es un trabajo de empleado normal, vas directo a grabar
-			iniciar_minijuego_memoria(id_unico)
+			iniciar_skill_check("funcion")
 
 func _on_boton_dormir_pressed():
 	var dia_hoy = Datos.tiempo["dia"]
@@ -913,6 +905,7 @@ func _on_boton_dormir_pressed():
 	cafes_tomados_hoy = 0 # El sueño resetea tu tolerancia a la cafeína
 	Datos.estado_actual = "normal"
 	Datos.tiempo["dia"] += 1
+	actualizar_temporada_si_aplica()
 	
 	# --- REINICIO SEMANAL DE CARTAS ---
 	if Datos.tiempo["dia"] % 7 == 1: # Si es día 8, 15, 22, 29...
@@ -930,7 +923,7 @@ func _on_boton_dormir_pressed():
 	
 	# --- COSTO DE ESTILO DE VIDA ---
 	# Empieza en $15, pero sube $5 por cada nivel que tengas
-	var costo_vida = 10 + (Datos.habilidades_actor["nivel_general"] * 5)
+	var costo_vida = 8 + (Datos.habilidades_actor["nivel_general"] * 3)
 	Datos.economia["dinero"] -= costo_vida
 	
 	# Le avisamos al jugador si le cobraron mucho
@@ -939,8 +932,10 @@ func _on_boton_dormir_pressed():
 	
 	# --- ALERTA BANCARIA (Si estás en números rojos) ---
 	if Datos.economia["dinero"] < 0:
-		var interes = int(abs(Datos.economia["dinero"]) * 0.1)
-		if interes < 10: interes = 10
+		var interes = int(abs(Datos.economia["dinero"]) * 0.08)
+		if interes < 5: interes = 5
+		if Datos.temporada_actual.get("objetivo_id", "") == "supervivencia":
+			interes = int(interes * 0.7)
 		Datos.economia["dinero"] -= interes
 		mensaje_matutino += "⚠️ ALERTA BANCARIA:\nEl banco te cobró -$" + str(interes) + " por intereses.\n"
 	# ==========================================
@@ -1062,41 +1057,90 @@ func _on_btn_volver_inicio_pressed():
 	contenedor_menu_inicio.visible = true
 
 # --- CASTINGS ÚNICOS ---
+
+func actualizar_temporada_si_aplica():
+	if Datos.tiempo["dia"] <= 1:
+		return
+	if Datos.tiempo["dia"] % 14 != 1:
+		return
+	Datos.temporada_actual["numero"] += 1
+	Datos.temporada_actual["objetivo_id"] = Datos.objetivos_temporada.keys().pick_random()
+	Datos.temporada_actual["mutador_id"] = Datos.mutadores_temporada.keys().pick_random()
+	var obj = Datos.objetivos_temporada[Datos.temporada_actual["objetivo_id"]]
+	var mut = Datos.mutadores_temporada[Datos.temporada_actual["mutador_id"]]
+	mostrar_alerta("🗓️ Nueva Temporada " + str(Datos.temporada_actual["numero"]), "Meta: " + obj["nombre"] + "\nMutador: " + mut["nombre"])
+
+func obtener_stat_arquetipo(arq_carta: String) -> int:
+	if arq_carta == "fisico":
+		return Datos.habilidades_actor.get("expresion_corporal", 1)
+	elif arq_carta == "forma" or arq_carta == "comercial":
+		return Datos.habilidades_actor.get("tecnica_vocal", 1)
+	elif arq_carta == "instinto":
+		return Datos.habilidades_actor.get("carisma", 1)
+	elif arq_carta == "metodo":
+		return Datos.habilidades_actor.get("memoria", 1)
+	return 1
+
+func obtener_penalizacion_repeticion_turno(arquetipos_usados: Dictionary, arq_carta: String) -> float:
+	var repeticiones = arquetipos_usados.get(arq_carta, 0)
+	if repeticiones <= 0:
+		return 1.0
+	return max(0.75, 1.0 - (0.1 * repeticiones))
+
 func generar_castings_del_dia():
 	castings_de_hoy.clear()
 	var todas_las_llaves = Datos.castings_disponibles.keys()
 	todas_las_llaves.shuffle()
+	var objetivo = Datos.temporada_actual.get("objetivo_id", "")
+	var mutador = Datos.temporada_actual.get("mutador_id", "")
 	
-	for i in range(3):
+	for i in range(min(3, todas_las_llaves.size())):
 		var id_base = todas_las_llaves[i]
 		var base_casting = Datos.castings_disponibles[id_base].duplicate()
-		
-		# --- NUEVO: ESCALADO INFINITO ---
 		var mi_nivel = Datos.habilidades_actor["nivel_general"]
-		# El casting será de tu nivel, un nivel menos, o hasta 2 niveles más difícil
 		var nivel_generado = max(1, randi_range(mi_nivel - 1, mi_nivel + 2))
 		
 		base_casting["nivel_minimo"] = nivel_generado
-		base_casting["seguidores_minimos"] = nivel_generado * randi_range(40, 80)
-		base_casting["paga"] = nivel_generado * randi_range(30, 60)
-		base_casting["recompensa_xp"] = nivel_generado * randi_range(40, 70)
+		base_casting["seguidores_minimos"] = int(nivel_generado * randi_range(35, 70))
+		base_casting["paga"] = int(nivel_generado * randi_range(25, 55))
+		base_casting["recompensa_xp"] = int(nivel_generado * randi_range(35, 65))
+		base_casting["volatilidad"] = randi_range(10, 40)
+
+		var contrato = Datos.contratos_casting.pick_random().duplicate(true)
+		base_casting["contrato"] = contrato
+		base_casting["paga"] = int(base_casting["paga"] * contrato.get("multi_pago", 1.0))
+		base_casting["recompensa_xp"] = int(base_casting["recompensa_xp"] * contrato.get("multi_xp", 1.0))
+		base_casting["recompensa_seguidores"] = int(base_casting.get("recompensa_seguidores", 0) * contrato.get("multi_seguidores", 1.0))
+		base_casting["penalidad_fracaso"] = int(contrato.get("penalidad_fracaso", 0))
+
+		if objetivo == "prestigio":
+			base_casting["recompensa_xp"] = int(base_casting["recompensa_xp"] * 1.2)
+		elif objetivo == "fama":
+			base_casting["recompensa_seguidores"] = int(base_casting["recompensa_seguidores"] * 1.25)
+		elif objetivo == "caja":
+			base_casting["paga"] = int(base_casting["paga"] * 1.2)
+
+		if mutador == "industria_ajustada":
+			base_casting["paga"] = int(base_casting["paga"] * 0.85)
+			base_casting["recompensa_xp"] = int(base_casting["recompensa_xp"] * 1.15)
+		elif mutador == "sponsors_agresivos":
+			base_casting["paga"] = int(base_casting["paga"] * 1.3)
+			base_casting["penalidad_fracaso"] += 6
 		
 		var titulo_especifico = GestorTextos.generar_titulo_produccion(id_base)
 		base_casting["papel"] = GestorTextos.generar_papel_produccion(id_base) 
-		# Le agregamos el Nivel al título para que se vea genial
 		base_casting["titulo_unico"] = base_casting["titulo"] + " [Nv." + str(nivel_generado) + "]\n" + titulo_especifico
 		base_casting["id_unico"] = id_base + "_dia" + str(Datos.tiempo["dia"]) + "_" + str(i)
 		base_casting["rendimiento_acumulado"] = 0
 		base_casting["hype_generado"] = 0
 		
-		# Asignación de arquetipo
 		if "corto" in id_base or "pelicula" in id_base or "drama" in id_base: base_casting["arquetipo"] = "metodo"
 		elif "extra" in id_base or "accion" in id_base or "danza" in id_base: base_casting["arquetipo"] = "fisico"
 		elif "teatro" in id_base or "obra" in id_base or "doblaje" in id_base or "locutor" in id_base: base_casting["arquetipo"] = "forma"
 		elif "comercial" in id_base or "conduccion" in id_base: base_casting["arquetipo"] = "comercial"
 		elif "standup" in id_base or "animador" in id_base or "impro" in id_base: base_casting["arquetipo"] = "instinto"
 		else: base_casting["arquetipo"] = "comercial" 
-			
+
 		castings_de_hoy.append(base_casting)
 
 func _on_btn_app_castings_pressed():
@@ -1111,6 +1155,7 @@ func _on_btn_app_castings_pressed():
 		var texto_boton = casting["titulo_unico"] + "\n"
 		texto_boton += "🎭 Papel: " + casting.get("papel", "Actor") + "\n" 
 		texto_boton += "Pide: Nvl " + str(casting["nivel_minimo"]) + " | " + str(casting["seguidores_minimos"]) + " Seg.\n"
+		texto_boton += "🏁 Temporada: " + Datos.objetivos_temporada[Datos.temporada_actual.get("objetivo_id", "prestigio")]["nombre"] + "\n"
 		
 		var arq = casting.get("arquetipo", "comercial")
 		var fuerte = ""; var debil = ""
@@ -1122,6 +1167,9 @@ func _on_btn_app_castings_pressed():
 		texto_boton += "🧠 Jefe: " + arq.capitalize() + " (Usa " + fuerte + " | Evita " + debil + ")\n"
 		
 		texto_boton += "🎁 Recompensas Base: +" + str(casting.get("recompensa_xp", 0)) + " XP\n"
+		var contrato = casting.get("contrato", {})
+		if not contrato.is_empty():
+			texto_boton += "📜 Contrato: " + contrato.get("nombre", "Estándar") + " | Riesgo: " + str(casting.get("volatilidad", 0)) + "%\n"
 		
 		if casting.has("tipo_pago") and casting["tipo_pago"] == "taquilla": texto_boton += "💸 Pago: % Taquilla\n"
 		else: texto_boton += "💰 Pago Fijo: $" + str(casting.get("paga", 0)) + "\n"
@@ -1522,7 +1570,7 @@ func evaluar_respuesta(texto_elegido):
 			base_aud += (c["influencia_equipo"] * 3) 
 			aforo_maximo = Datos.espacios_disponibles[Datos.mi_compania["id_espacio_actual"]]["capacidad_publico"]
 			
-		audiencia_final = base_aud + int(Datos.stats_actor["seguidores"] * 0.1) + c.get("hype_generado", 0)
+		audiencia_final = base_aud + int(Datos.stats_actor["seguidores"] * 0.1) + c.get("hype_generado", 0) + int(Datos.lista_contactos.size() * 2)
 		
 		if c.get("estado_tecnicos") == "sabotaje": audiencia_final = int(audiencia_final * 0.3)
 		elif estrellas <= 2: audiencia_final = int(audiencia_final * 0.5) 
@@ -1602,6 +1650,7 @@ func evaluar_respuesta(texto_elegido):
 		
 		var multiplicador_fracaso = (3 - estrellas) 
 		var fans_perdidos = c.get("importancia", 1) * 15 * multiplicador_fracaso
+		fans_perdidos += c.get("penalidad_fracaso", 0)
 		reducir_seguidores(fans_perdidos)
 		
 		mostrar_alerta("🍅 Fracaso en Crítica", "Un desastre absoluto.\nTu mala actuación fue comentada en redes.\n\nCrítica: " + str(estrellas) + "⭐\nGanancias: $" + str(ganancia_final) + "\nSeguidores Perdidos: -" + str(fans_perdidos))
@@ -1729,9 +1778,6 @@ func lanzar_produccion_propia(id_formato, contacto):
 		mostrar_alerta("❌ Sin Presupuesto", "Necesitas $" + str(formato["costo_montaje"]) + " para pagar el montaje.")
 		return
 		
-	# Te cobramos el montaje
-	Datos.economia["dinero"] -= formato["costo_montaje"]
-	
 	# Creamos un "Proyecto Activo" pero con reglas especiales
 	var id_unico = "prod_propia_" + str(Datos.tiempo["dia"])
 	var titulo_obra = GestorTextos.generar_titulo_produccion("teatro")
@@ -1753,9 +1799,6 @@ func lanzar_produccion_propia(id_formato, contacto):
 		"rendimiento_acumulado": 0,
 		"hype_generado": 0
 	}
-	
-	# Lo metemos en el sistema como si fuera un casting normal
-	Datos.proyectos_activos[id_unico] = mi_proyecto
 	
 	var d_ini = Datos.tiempo["dia"] + 2 # Empieza en 2 días para darte tiempo de marketing
 	var dias_ocupados = []
@@ -2261,24 +2304,24 @@ func calcular_puntos_proyectados() -> Dictionary:
 	var hay_combo_activo = _hay_combo_seleccionado()
 	var prob_critico_base = 0.0
 	if mi_estres >= 40:
-		prob_critico_base = clamp(mi_estres / 250.0, 0.0, 0.38)
+		prob_critico_base = clamp((mi_estres - 35) / 320.0, 0.0, 0.25)
 	
+	var arquetipos_usados = {}
 	for id_c in seleccion_actual_ids:
 		if not Datos.catalogo_cartas.has(id_c):
 			continue
 		var info = Datos.catalogo_cartas[id_c]
 		var poder_base = info["poder"]
 		var arq_carta = info.get("arquetipo", "versatil")
+		var penal_repeticion = obtener_penalizacion_repeticion_turno(arquetipos_usados, arq_carta)
+		arquetipos_usados[arq_carta] = arquetipos_usados.get(arq_carta, 0) + 1
 		
 		# --- 1. BONO POR ESTADÍSTICAS DEL ACTOR ---
 		var bono_stat = 0
-		if arq_carta == "fisico": bono_stat = Datos.habilidades_actor.get("cuerpo", 1)
-		elif arq_carta == "forma" or arq_carta == "comercial": bono_stat = Datos.habilidades_actor.get("voz", 1)
-		elif arq_carta == "instinto": bono_stat = Datos.habilidades_actor.get("carisma", 1)
-		elif arq_carta == "metodo": bono_stat = Datos.habilidades_actor.get("memoria", 1)
+		bono_stat = obtener_stat_arquetipo(arq_carta)
 		
-		# Balance: Cada 5 puntos en tu habilidad te da +1 de Poder Base a la carta
-		var poder_escalado = poder_base + int(bono_stat / 5.0)
+		# Balance: Cada 6 puntos en tu habilidad te da +1 de Poder Base a la carta
+		var poder_escalado = poder_base + int(bono_stat / 6.0)
 # --- 👑 EGO ESCALABLE INFINITO (Proyección) ---
 		if mi_ego >= 50:
 			var bono_ego = calcular_bono_ego_suavizado(mi_ego, nivel_actual)
@@ -2298,7 +2341,7 @@ func calcular_puntos_proyectados() -> Dictionary:
 		elif arq_jefe == "instinto" and arq_carta == "metodo": multi_tipo = 0.5
 		
 		# Aplicamos el multiplicador al poder ya escalado por tus stats
-		var poder_base_carta = int(poder_escalado * multi_tipo)
+		var poder_base_carta = int((poder_escalado * multi_tipo) * penal_repeticion)
 		puntos_proyectados += poder_base_carta
 
 		var prob_critico = prob_critico_base
@@ -2307,7 +2350,7 @@ func calcular_puntos_proyectados() -> Dictionary:
 		if mi_arq == "metodo":
 			prob_critico = min(prob_critico_base * 1.25, 0.38)
 			valor_min = int(poder_base_carta * 0.85)
-			valor_max = int(poder_base_carta * 1.5)
+			valor_max = int(poder_base_carta * 1.3)
 			hay_rng_critico = hay_rng_critico or prob_critico > 0.0
 		elif mi_arq == "forma":
 			prob_critico = prob_critico_base * 0.5
@@ -2324,7 +2367,7 @@ func calcular_puntos_proyectados() -> Dictionary:
 				prob_critico = 0.0
 		else:
 			if prob_critico > 0.0:
-				valor_max = int(poder_base_carta * 1.5)
+				valor_max = int(poder_base_carta * 1.3)
 				hay_rng_critico = true
 
 		if prob_critico > 0.0:
@@ -2384,8 +2427,9 @@ func _on_btn_actuar_pressed():
 	var hay_combo_activo = _hay_combo_seleccionado()
 	var prob_critico_base = 0.0
 	if mi_estres >= 40:
-		prob_critico_base = clamp(mi_estres / 250.0, 0.0, 0.38)
+		prob_critico_base = clamp((mi_estres - 35) / 320.0, 0.0, 0.25)
 	
+	var arquetipos_usados = {}
 	for id_c in seleccion_actual_ids:
 		if not Datos.catalogo_cartas.has(id_c):
 			escribir_log_batalla("⚠️ Carta inválida detectada: " + str(id_c) + ". Se omitió para evitar crash.")
@@ -2393,15 +2437,14 @@ func _on_btn_actuar_pressed():
 		var info = Datos.catalogo_cartas[id_c]
 		var poder_base = info["poder"]
 		var arq_carta = info.get("arquetipo", "versatil")
+		var penal_repeticion = obtener_penalizacion_repeticion_turno(arquetipos_usados, arq_carta)
+		arquetipos_usados[arq_carta] = arquetipos_usados.get(arq_carta, 0) + 1
 		
 		# --- 1. BONO POR ESTADÍSTICAS DEL ACTOR ---
 		var bono_stat = 0
-		if arq_carta == "fisico": bono_stat = Datos.habilidades_actor.get("cuerpo", 1)
-		elif arq_carta == "forma" or arq_carta == "comercial": bono_stat = Datos.habilidades_actor.get("voz", 1)
-		elif arq_carta == "instinto": bono_stat = Datos.habilidades_actor.get("carisma", 1)
-		elif arq_carta == "metodo": bono_stat = Datos.habilidades_actor.get("memoria", 1)
+		bono_stat = obtener_stat_arquetipo(arq_carta)
 		
-		var poder_escalado = poder_base + int(bono_stat / 5.0)
+		var poder_escalado = poder_base + int(bono_stat / 6.0)
 
 		# --- 👑 EGO ESCALABLE INFINITO (Bono de Presencia) ---
 		if mi_ego >= 50:
@@ -2414,11 +2457,11 @@ func _on_btn_actuar_pressed():
 		if mi_arq == "metodo":
 			prob_critico = min(prob_critico_base * 1.25, 0.38)
 			if randf() <= prob_critico:
-				poder_escalado = int(poder_escalado * 1.5)
-				escribir_log_batalla("💥 Método al límite: crítico x1.5 en " + info["nombre"])
-				mostrar_texto_flotante("💥 CRÍTICO x1.5", label_jefe, Color(1, 0.2, 0.2), 1.4)
+				poder_escalado = int(poder_escalado * 1.3)
+				escribir_log_batalla("💥 Método al límite: crítico x1.3 en " + info["nombre"])
+				mostrar_texto_flotante("💥 CRÍTICO x1.3", label_jefe, Color(1, 0.2, 0.2), 1.4)
 			else:
-				poder_escalado = int(poder_escalado * 0.85)
+				poder_escalado = int(poder_escalado * 0.9)
 				escribir_log_batalla("⚠️ Método inestable: " + info["nombre"] + " perdió potencia.")
 		elif mi_arq == "forma":
 			prob_critico = prob_critico_base * 0.5
@@ -2433,7 +2476,7 @@ func _on_btn_actuar_pressed():
 				escribir_log_batalla("⚡ Instinto conectado al combo: +" + str(flat_instinto) + " poder en " + info["nombre"])
 				mostrar_texto_flotante("⚡ PROC INSTINTO", label_jefe, Color(0.6, 0.9, 1.0), 1.2)
 		elif randf() <= prob_critico:
-			poder_escalado = int(poder_escalado * 1.5)
+			poder_escalado = int(poder_escalado * 1.3)
 			escribir_log_batalla("💥 ¡CRÍTICO! El estrés impulsó tu carta: " + info["nombre"])
 			mostrar_texto_flotante("💥 ¡CRÍTICO!", label_jefe, Color(1, 0.2, 0.2), 1.5)
 		
@@ -2450,7 +2493,9 @@ func _on_btn_actuar_pressed():
 		elif arq_jefe == "instinto" and arq_carta == "forma": multi_tipo = 1.5
 		elif arq_jefe == "instinto" and arq_carta == "metodo": multi_tipo = 0.5
 		
-		puntos_ronda += int(poder_escalado * multi_tipo)
+		puntos_ronda += int((poder_escalado * multi_tipo) * penal_repeticion)
+		if Datos.lista_contactos.size() >= 3 and arq_carta == mi_arq:
+			puntos_ronda += 1
 		
 		if info.has("efecto"):
 			var ef = info["efecto"]
