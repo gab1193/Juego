@@ -390,10 +390,12 @@ func iniciar_skill_check(tipo):
 		rondas_restantes = 3 
 		
 		if tipo == "trabajo":
+			casting_data_actual = {}
 			nombre_jefe = "Mesa 4: Cliente Problemático"
 			exigencia_director = randi_range(6, 12)
 			rondas_restantes = 2
 		elif tipo == "ensayo_casa":
+			casting_data_actual = {}
 			nombre_jefe = "Tu Propia Inseguridad"
 			exigencia_director = randi_range(12, 20)
 		elif tipo == "casting_real":
@@ -2425,6 +2427,21 @@ func calcular_puntos_proyectados() -> Dictionary:
 		"maximo": int(max_rng * multiplicador_proyectado),
 		"hay_rng_critico": hay_rng_critico
 	}
+
+func _valor_entero_seguro(valor, por_defecto: int = 1) -> int:
+	match typeof(valor):
+		TYPE_INT:
+			return valor
+		TYPE_FLOAT:
+			return int(valor)
+		TYPE_STRING:
+			var txt = str(valor).strip_edges()
+			if txt.is_valid_int():
+				return int(txt)
+			if txt.is_valid_float():
+				return int(float(txt))
+	return por_defecto
+
 func _on_btn_actuar_pressed():
 	if resolviendo_balasim: return
 	resolviendo_balasim = true
@@ -2642,8 +2659,17 @@ func _finalizar_balasim(fue_exito: bool):
 	call_deferred("resolver_rutina_general", fue_exito)
 # --- EL JEFE SE DEFIENDE (IA DINÁMICA + SABOTAJE MENTAL) ---
 func ejecutar_accion_jefe():
-	var jefe = casting_data_actual.get("arquetipo", "comercial")
-	var nivel_casting = casting_data_actual.get("nivel_minimo", 1)
+	var jefe = "comercial"
+	var nivel_casting = 1
+	if tipo_rutina == "ensayo_casa":
+		jefe = "inseguridad"
+		nivel_casting = max(1, _valor_entero_seguro(Datos.habilidades_actor.get("nivel_general", 1), 1))
+	elif tipo_rutina == "trabajo":
+		jefe = "comercial"
+		nivel_casting = max(1, _valor_entero_seguro(Datos.habilidades_actor.get("nivel_general", 1), 1))
+	else:
+		jefe = str(casting_data_actual.get("arquetipo", "comercial"))
+		nivel_casting = max(1, _valor_entero_seguro(casting_data_actual.get("nivel_minimo", 1), 1))
 	var accion_tomada = ""
 	var color_accion = Color.WHITE
 	
