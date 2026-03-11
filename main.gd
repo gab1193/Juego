@@ -132,6 +132,14 @@ var ha_publicado_hoy = false
 var ha_ido_mixer_hoy = false
 var cafes_tomados_hoy = 0 # <--- NUEVA VARIABLE DE LÍMITE
 
+const MAPA_HABILIDAD_POR_ARQUETIPO = {
+	"fisico": "expresion_corporal",
+	"forma": "tecnica_vocal",
+	"comercial": "tecnica_vocal",
+	"instinto": "carisma",
+	"metodo": "memoria"
+}
+
 var lineas_guion = [
 	{"texto": "Ser o no ser, ahí está el [___].", "correcta": "detalle", "incorrectas": ["dilema", "problema"]},
 	{"texto": "¡No puedes manejar la [___]!", "correcta": "verdad", "incorrectas": ["presión", "mentira"]},
@@ -2217,6 +2225,13 @@ func jugar_carta_balasim(boton_carta, id_carta, info_carta):
 		if is_instance_valid(btn_mulligan): btn_mulligan.disabled = true
 
 	actualizar_ui_balasim(label_jefe.text.split("\n")[0].replace("⚔️ ", ""))
+
+func obtener_bono_habilidad_por_arquetipo(arq_carta: String) -> int:
+	var clave_habilidad = MAPA_HABILIDAD_POR_ARQUETIPO.get(arq_carta, "")
+	if clave_habilidad == "":
+		return 0
+	return Datos.habilidades_actor.get(clave_habilidad, 1)
+
 func calcular_puntos_proyectados() -> int:
 	var puntos_proyectados = 0
 	var multiplicador_proyectado = 1.0
@@ -2230,11 +2245,7 @@ func calcular_puntos_proyectados() -> int:
 		var arq_carta = info.get("arquetipo", "versatil")
 		
 		# --- 1. BONO POR ESTADÍSTICAS DEL ACTOR ---
-		var bono_stat = 0
-		if arq_carta == "fisico": bono_stat = Datos.habilidades_actor.get("cuerpo", 1)
-		elif arq_carta == "forma" or arq_carta == "comercial": bono_stat = Datos.habilidades_actor.get("voz", 1)
-		elif arq_carta == "instinto": bono_stat = Datos.habilidades_actor.get("carisma", 1)
-		elif arq_carta == "metodo": bono_stat = Datos.habilidades_actor.get("memoria", 1)
+		var bono_stat = obtener_bono_habilidad_por_arquetipo(arq_carta)
 		
 		# Balance: Cada 5 puntos en tu habilidad te da +1 de Poder Base a la carta
 		var poder_escalado = poder_base + int(bono_stat / 5.0)
@@ -2315,11 +2326,7 @@ func _on_btn_actuar_pressed():
 		var arq_carta = info.get("arquetipo", "versatil")
 		
 		# --- 1. BONO POR ESTADÍSTICAS DEL ACTOR ---
-		var bono_stat = 0
-		if arq_carta == "fisico": bono_stat = Datos.habilidades_actor.get("cuerpo", 1)
-		elif arq_carta == "forma" or arq_carta == "comercial": bono_stat = Datos.habilidades_actor.get("voz", 1)
-		elif arq_carta == "instinto": bono_stat = Datos.habilidades_actor.get("carisma", 1)
-		elif arq_carta == "metodo": bono_stat = Datos.habilidades_actor.get("memoria", 1)
+		var bono_stat = obtener_bono_habilidad_por_arquetipo(arq_carta)
 		
 		var poder_escalado = poder_base + int(bono_stat / 5.0)
 
