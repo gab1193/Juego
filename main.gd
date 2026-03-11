@@ -136,11 +136,13 @@ var monologo_estamina = 40.0
 var monologo_xp_recolectada = 0
 var monologo_spawn_acum = 0.0
 var monologo_ui = {}
+var monologo_dots = []
 var tecnicas_monologo = [
-	{"nombre": "Respiración", "costo": 12, "dano": 20, "color": Color(0.6, 0.9, 1.0)},
-	{"nombre": "Leer en Voz Alta", "costo": 18, "dano": 32, "color": Color(1.0, 0.8, 0.4)},
-	{"nombre": "Aislarse", "costo": 25, "dano": 45, "color": Color(0.8, 1.0, 0.6)}
+	{"nombre": "Respiración", "costo": 14, "dps": 10.0, "dur": 3.5, "radio": 120.0, "color": Color(0.6, 0.9, 1.0)},
+	{"nombre": "Leer en Voz Alta", "costo": 20, "dps": 16.0, "dur": 3.0, "radio": 160.0, "color": Color(1.0, 0.8, 0.4)},
+	{"nombre": "Aislarse", "costo": 28, "dps": 26.0, "dur": 2.6, "radio": 220.0, "color": Color(0.8, 1.0, 0.6)}
 ]
+var bonus_agentes_ronda = {}
 
 var ha_trabajado_hoy = false
 var ha_publicado_hoy = false
@@ -278,6 +280,15 @@ func actualizar_interfaz():
 	elif arq == "forma": texto_arq = "Perfil: Clásico (Anti-Sabotaje, -50% Fans)"
 	elif arq == "comercial": texto_arq = "Perfil: Comercial (+50% Dinero, Ego x2)"
 	elif arq == "instinto": texto_arq = "Perfil: Instintivo (+2s en Minijuegos, -50% XP)"
+	var agentes_txt = "\n🎲 Agentes: "
+	for i in range(Datos.agentes_slots.size()):
+		var id_ag = str(Datos.agentes_slots[i])
+		if id_ag == "":
+			agentes_txt += "[Slot " + str(i + 1) + ": vacío] "
+		else:
+			var nom = Datos.catalogo_agentes.get(id_ag, {}).get("nombre", id_ag)
+			agentes_txt += "[" + str(i + 1) + ": " + str(nom) + "] "
+	texto_arq += agentes_txt
 	label_arquetipo.text = texto_arq
 	label_stats.text = "Voz: " + str(Datos.habilidades_actor["tecnica_vocal"]) + "\nCuerpo: " + str(Datos.habilidades_actor["expresion_corporal"]) + "\nCarisma: " + str(Datos.habilidades_actor["carisma"]) + "\nMemoria: " + str(Datos.habilidades_actor["memoria"])
 
@@ -499,6 +510,9 @@ func iniciar_skill_check(tipo):
 		elif mi_arquetipo == "instinto":
 			robar_extra_instinto = 1 + int(nivel_arq / 25.0)
 			escribir_log_batalla("⚡ Mente Rápida (Instinto): Robarás " + str(robar_extra_instinto) + " carta(s) extra este turno.")
+		if _agentes_activos().has("sponsor_fisico"):
+			Datos.stats_actor["energia_actual"] = min(Datos.stats_actor["energia_maxima"], Datos.stats_actor["energia_actual"] + 1)
+			escribir_log_batalla("💪 Sponsor Físico: +1 Energía al iniciar combate.")
 		actualizar_ui_balasim(nombre_jefe)
 		# 1. Repartimos la mano inicial normalmente
 		repartir_mano_balasim(true)
@@ -694,6 +708,7 @@ func iniciar_monologo_interior(id_carta_entrenada: String):
 	monologo_estamina = 40.0
 	monologo_xp_recolectada = 0
 	monologo_spawn_acum = 0.0
+	monologo_dots.clear()
 	panel_balasim.visible = false
 	if monologo_ui.has("root") and is_instance_valid(monologo_ui["root"]):
 		monologo_ui["root"].queue_free()
@@ -702,6 +717,8 @@ func iniciar_monologo_interior(id_carta_entrenada: String):
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	$CapaUI.add_child(root)
 	monologo_ui = {"root": root, "enemigos": [], "carta": id_carta_entrenada}
+	var lvl_c = max(1, Datos.obtener_nivel_carta(id_carta_entrenada))
+	monologo_ui["dificultad"] = 1.0 + (lvl_c * 0.08)
 	var lbl_top = Label.new(); lbl_top.position = Vector2(24, 18); root.add_child(lbl_top); monologo_ui["lbl_top"] = lbl_top
 	var lbl_time = Label.new(); lbl_time.position = Vector2(24, 46); root.add_child(lbl_time); monologo_ui["lbl_time"] = lbl_time
 	var carta = PanelContainer.new(); carta.custom_minimum_size = Vector2(300, 140); carta.position = Vector2(430, 260); root.add_child(carta); monologo_ui["carta"] = carta
@@ -715,7 +732,7 @@ func iniciar_monologo_interior(id_carta_entrenada: String):
 		var btn = Button.new()
 		btn.position = Vector2(24 + (i * 230), 560)
 		btn.custom_minimum_size = Vector2(210, 80)
-		btn.text = t["nombre"] + "\nCosto " + str(t["costo"])
+		btn.text = t["nombre"] + "\nCosto " + str(t["costo"]) + " | DoT " + str(snapped(t["dps"], 0.1)) + "/s"
 		btn.modulate = t["color"]
 		btn.pressed.connect(usar_tecnica_monologo.bind(i))
 		root.add_child(btn)
@@ -731,14 +748,15 @@ func usar_tecnica_monologo(idx: int):
 	if monologo_estamina < float(t["costo"]):
 		return
 	monologo_estamina -= float(t["costo"])
-	if monologo_ui.get("enemigos", []).is_empty():
-		actualizar_ui_monologo()
-		return
-	var enemigo = monologo_ui["enemigos"].pop_front()
-	if is_instance_valid(enemigo):
-		enemigo.queue_free()
-	monologo_xp_recolectada += 12 + int(idx * 6)
-	mostrar_texto_flotante("✨ +XP Carta", monologo_ui.get("carta"), Color(0.7, 1.0, 0.7), 1.0)
+	var dot = {
+		"tiempo": float(t["dur"]),
+		"dps": float(t["dps"]),
+		"radio": float(t["radio"]),
+		"color": t["color"],
+		"nombre": t["nombre"]
+	}
+	monologo_dots.append(dot)
+	mostrar_texto_flotante("🌀 " + t["nombre"], monologo_ui.get("carta"), t["color"], 1.0)
 	actualizar_ui_monologo()
 
 func _procesar_monologo(delta):
@@ -748,17 +766,35 @@ func _procesar_monologo(delta):
 	monologo_tiempo = max(0.0, monologo_tiempo - delta)
 	monologo_estamina = min(100.0, monologo_estamina + (10.0 * delta))
 	monologo_spawn_acum += delta
-	if monologo_spawn_acum >= 1.35:
+	var dificultad = float(monologo_ui.get("dificultad", 1.0))
+	if monologo_spawn_acum >= (1.55 / dificultad):
 		monologo_spawn_acum = 0.0
 		_spawn_enemigo_monologo()
 	var centro = Vector2(580, 330)
+	for i in range(monologo_dots.size() - 1, -1, -1):
+		monologo_dots[i]["tiempo"] = float(monologo_dots[i]["tiempo"]) - delta
+		var dps = float(monologo_dots[i]["dps"])
+		var radio = float(monologo_dots[i]["radio"])
+		for enemigo in monologo_ui.get("enemigos", []):
+			if not is_instance_valid(enemigo):
+				continue
+			if enemigo.position.distance_to(centro) <= radio:
+				var hp = float(enemigo.get_meta("hp", 10.0)) - (dps * delta)
+				enemigo.set_meta("hp", hp)
+				enemigo.text = str(enemigo.get_meta("tipo", "Distracción")) + " (" + str(max(0, int(hp))) + ")"
+				if hp <= 0.0:
+					monologo_xp_recolectada += 4
+					enemigo.queue_free()
+		if monologo_dots[i]["tiempo"] <= 0:
+			monologo_dots.remove_at(i)
 	for enemigo in monologo_ui.get("enemigos", []):
 		if not is_instance_valid(enemigo):
 			continue
 		var dir = (centro - enemigo.position).normalized()
-		enemigo.position += dir * (80.0 * delta)
+		enemigo.position += dir * (80.0 * dificultad * delta)
 		if enemigo.position.distance_to(centro) < 55:
-			monologo_concentracion = max(0.0, monologo_concentracion - 9.0)
+			var golpe = float(enemigo.get_meta("dmg", 9.0))
+			monologo_concentracion = max(0.0, monologo_concentracion - golpe)
 			mostrar_texto_flotante("💢 Distracción", monologo_ui.get("carta"), Color(1.0, 0.4, 0.4), 1.0)
 			enemigo.queue_free()
 	monologo_ui["enemigos"] = monologo_ui.get("enemigos", []).filter(func(e): return is_instance_valid(e) and not e.is_queued_for_deletion())
@@ -772,7 +808,11 @@ func _spawn_enemigo_monologo():
 	if not monologo_ui.has("root"):
 		return
 	var e = Label.new()
-	e.text = ["Duda", "Ruido", "Inseguridad", "Miedo escénico"].pick_random()
+	var t = ["Duda", "Ruido", "Inseguridad", "Miedo escénico"].pick_random()
+	e.text = t + " (10)"
+	e.set_meta("tipo", t)
+	e.set_meta("hp", 10.0 + (4.0 * float(monologo_ui.get("dificultad", 1.0))))
+	e.set_meta("dmg", 7.0 + (2.0 * float(monologo_ui.get("dificultad", 1.0))))
 	e.add_theme_color_override("font_color", Color(1.0, 0.5, 0.5))
 	var lado = randi_range(0, 3)
 	if lado == 0: e.position = Vector2(randf_range(0, 1160), 20)
@@ -787,25 +827,32 @@ func actualizar_ui_monologo():
 		return
 	monologo_ui["lbl_top"].text = "🧠 Concentración: " + str(int(monologo_concentracion)) + "/100"
 	monologo_ui["lbl_time"].text = "⏳ Tiempo: " + str(snapped(monologo_tiempo, 0.1)) + "s"
-	monologo_ui["lbl_est"].text = "⚡ Estamina mental: " + str(int(monologo_estamina)) + " | XP acumulada carta: " + str(monologo_xp_recolectada)
+	monologo_ui["lbl_est"].text = "⚡ Estamina mental: " + str(int(monologo_estamina)) + " | XP acumulada carta: " + str(monologo_xp_recolectada) + " | Zonas activas: " + str(monologo_dots.size())
 
 func finalizar_monologo_interior(fue_victoria: bool):
 	monologo_activo = false
 	var bonus = 0
 	if fue_victoria:
-		bonus = 120
+		bonus = 55
 	var xp_total = monologo_xp_recolectada + bonus
+	xp_total = int(clamp(xp_total, 15, 120))
+	var xp_actor = 0
+	var txt_carta = ""
 	if carta_entrenando_id != "":
+		var antes = _describir_xp_carta(carta_entrenando_id)
 		Datos.otorgar_xp_carta(carta_entrenando_id, xp_total)
-		var xp_actor = 20 + int(xp_total / 5.0)
+		var despues = _describir_xp_carta(carta_entrenando_id)
+		txt_carta = "\nCarta: " + antes + " ➜ " + despues
+		xp_actor = 10 + int(xp_total / 8.0)
 		Datos.habilidades_actor["xp_actual"] += xp_actor
 	if monologo_ui.has("root") and is_instance_valid(monologo_ui["root"]):
 		monologo_ui["root"].queue_free()
 	monologo_ui.clear()
+	monologo_dots.clear()
 	var t = "Perdiste concentración."
 	if fue_victoria:
 		t = "Sostuviste el foco hasta el final."
-	mostrar_alerta("🧠 Monólogo Interior", t + "\nXP Carta: +" + str(xp_total))
+	mostrar_alerta("🧠 Monólogo Interior", t + "\nXP Carta: +" + str(xp_total) + txt_carta + "\nXP Personaje: +" + str(xp_actor))
 	comprobar_level_up()
 	actualizar_interfaz()
 
@@ -928,7 +975,7 @@ func resolver_rutina_general(fue_exito):
 		Datos.habilidades_actor["xp_actual"] += xp_final
 
 		# --- GUARDAR EN BOOK ---
-		var registro_book = {"titulo": nombre_proyecto, "papel": c.get("papel", "Actor"), "estrellas": estrellas, "ganancia": ganancia_final}
+		var registro_book = {"titulo": nombre_proyecto, "papel": c.get("papel", "Actor"), "estrellas": estrellas, "ganancia": ganancia_final, "nivel": c.get("nivel_minimo", 1), "sold_out": bool(c.get("hubo_sold_out", false))}
 		if audiencia_final > 0: registro_book["audiencia"] = audiencia_final
 		Datos.historial_proyectos.push_front(registro_book)
 
@@ -1282,6 +1329,68 @@ func obtener_penalizacion_repeticion_turno(arquetipos_usados: Dictionary, arq_ca
 		return 1.0
 	return max(0.75, 1.0 - (0.1 * repeticiones))
 
+func _book_stats() -> Dictionary:
+	var tier3_4est = 0
+	var sold_outs = 0
+	for p in Datos.historial_proyectos:
+		if int(p.get("nivel", 1)) >= 5 and int(p.get("estrellas", 0)) >= 4:
+			tier3_4est += 1
+		if bool(p.get("sold_out", false)):
+			sold_outs += 1
+	return {"tier3_4est": tier3_4est, "sold_outs": sold_outs}
+
+func _validar_requisitos_book(casting: Dictionary) -> Dictionary:
+	var req = casting.get("book_req", {})
+	if req.is_empty():
+		return {"ok": true, "faltan": ""}
+	var stats = _book_stats()
+	var faltantes = []
+	var r_tier = int(req.get("tier3_4est", 0))
+	var r_so = int(req.get("sold_outs", 0))
+	if stats["tier3_4est"] < r_tier:
+		faltantes.append("Tier 3 con 4⭐: " + str(stats["tier3_4est"]) + "/" + str(r_tier))
+	if stats["sold_outs"] < r_so:
+		faltantes.append("Sold Out: " + str(stats["sold_outs"]) + "/" + str(r_so))
+	return {"ok": faltantes.is_empty(), "faltan": " | ".join(faltantes)}
+
+func _describir_xp_carta(id_inst: String) -> String:
+	if not Datos.cartas_instancia.has(id_inst):
+		return ""
+	var d = Datos.cartas_instancia[id_inst]
+	return "Niv " + str(d.get("nivel", 1)) + " | XP " + str(d.get("xp_actual", 0)) + "/" + str(d.get("xp_requerida", 100))
+
+func _agentes_activos() -> Array:
+	var act = []
+	for a in Datos.agentes_slots:
+		if str(a) != "":
+			act.append(str(a))
+	return act
+
+func _aplicar_agentes_inicio_ronda():
+	bonus_agentes_ronda = {"mult_arq": {}, "crit_bonus": 0.0}
+	for id_ag in _agentes_activos():
+		if id_ag == "mania_comedia":
+			exigencia_director += 2
+			bonus_agentes_ronda["mult_arq"]["comercial"] = 1.2
+		elif id_ag == "amuleto_memoria":
+			if seleccion_actual_ids.size() > 0:
+				var prim = Datos.obtener_info_carta(seleccion_actual_ids[0])
+				if prim.get("arquetipo", "") == "forma":
+					mulligans_restantes += 1
+		elif id_ag == "padrino_metodo":
+			bonus_agentes_ronda["mult_arq"]["metodo"] = 1.15
+			bonus_agentes_ronda["crit_bonus"] = float(bonus_agentes_ronda.get("crit_bonus", 0.0)) + 0.05
+		elif id_ag == "sponsor_fisico":
+			bonus_agentes_ronda["mult_arq"]["fisico"] = 1.12
+
+func _mult_agente_arq(arq: String) -> float:
+	var m = 1.0
+	for id_ag in _agentes_activos():
+		if id_ag == "mania_comedia" and arq == "comercial": m *= 1.2
+		elif id_ag == "padrino_metodo" and arq == "metodo": m *= 1.15
+		elif id_ag == "sponsor_fisico" and arq == "fisico": m *= 1.12
+	return m
+
 func generar_castings_del_dia():
 	castings_de_hoy.clear()
 	var todas_las_llaves = Datos.castings_disponibles.keys()
@@ -1328,6 +1437,11 @@ func generar_castings_del_dia():
 		base_casting["id_unico"] = id_base + "_dia" + str(Datos.tiempo["dia"]) + "_" + str(i)
 		base_casting["rendimiento_acumulado"] = 0
 		base_casting["hype_generado"] = 0
+		base_casting["book_req"] = {}
+		if nivel_generado >= 5:
+			base_casting["book_req"] = {"tier3_4est": 2, "sold_outs": 1}
+		elif nivel_generado >= 4:
+			base_casting["book_req"] = {"tier3_4est": 1, "sold_outs": 0}
 		
 		if "corto" in id_base or "pelicula" in id_base or "drama" in id_base: base_casting["arquetipo"] = "metodo"
 		elif "extra" in id_base or "accion" in id_base or "danza" in id_base: base_casting["arquetipo"] = "fisico"
@@ -1368,6 +1482,9 @@ func _on_btn_app_castings_pressed():
 		
 		if casting.has("tipo_pago") and casting["tipo_pago"] == "taquilla": texto_boton += "💸 Pago: % Taquilla\n"
 		else: texto_boton += "💰 Pago Fijo: $" + str(casting.get("paga", 0)) + "\n"
+		var val_book = _validar_requisitos_book(casting)
+		if not val_book["ok"]:
+			texto_boton += "📖 REQUISITO BOOK: " + str(val_book["faltan"]) + "\n"
 			
 		if casting["dias_de_trabajo"] > 1: 
 			texto_boton += "Ensayos: " + str(casting["dias_de_trabajo"] - 1) + " | Función: 1"
@@ -1385,6 +1502,10 @@ func _on_btn_app_castings_pressed():
 			btn_trabajo.text = "[ YA FIRMADO ]\n" + btn_trabajo.text
 			btn_trabajo.disabled = true
 			btn_trabajo.modulate = Color(0.5, 0.5, 0.5) # Color gris apagado
+		elif not val_book["ok"]:
+			btn_trabajo.text = "[ BLOQUEADO POR BOOK ]\n" + btn_trabajo.text
+			btn_trabajo.disabled = true
+			btn_trabajo.modulate = Color(0.35, 0.35, 0.35)
 		else:
 			btn_trabajo.pressed.connect(abrir_confirmacion_casting.bind(index))
 			
@@ -1397,6 +1518,10 @@ func _on_btn_volver_inicio_castings_pressed():
 func abrir_confirmacion_casting(index):
 	var c = castings_de_hoy[index]
 	casting_seleccionado_temp = c["id_unico"]
+	var val_book = _validar_requisitos_book(c)
+	if not val_book["ok"]:
+		mostrar_alerta("📖 Book insuficiente", "No puedes audicionar aún.\nTe falta: " + str(val_book["faltan"]))
+		return
 	
 	if Datos.stats_actor["seguidores"] < c["seguidores_minimos"]:
 		mostrar_alerta("🎬 Perfil Insuficiente", "Necesitas tener al menos " + str(c["seguidores_minimos"]) + " Seguidores para audicionar.")
@@ -1530,6 +1655,7 @@ func _on_btn_ir_networking_pressed():
 				Datos.stats_actor["contactos"] += 1
 				var nuevo_contacto = GestorTextos.generar_contacto_nuevo(Datos.habilidades_actor["nivel_general"], Datos.habilidades_actor["carisma"])
 				Datos.lista_contactos.append(nuevo_contacto)
+				intentar_obtener_agente_por_contacto(nuevo_contacto)
 				sumar_seguidores(1)
 				var hist = GestorTextos.obtener_texto("networking_inicio_exito")
 				mostrar_alerta(hist.titulo, hist.desc + "\n\nObtuviste la tarjeta de:\n⭐ " + nuevo_contacto["nombre"] + " (" + nuevo_contacto["rol"] + ")")
@@ -1543,6 +1669,7 @@ func _on_btn_ir_networking_pressed():
 				Datos.stats_actor["contactos"] += 1
 				var nuevo_contacto = GestorTextos.generar_contacto_nuevo(Datos.habilidades_actor["nivel_general"], Datos.habilidades_actor["carisma"])
 				Datos.lista_contactos.append(nuevo_contacto)
+				intentar_obtener_agente_por_contacto(nuevo_contacto)
 				var bonus_seg = Datos.habilidades_actor["carisma"] * 10
 				sumar_seguidores(bonus_seg)
 				var hist = GestorTextos.obtener_texto("networking_fama_exito")
@@ -1573,6 +1700,28 @@ func _on_btn_app_contactos_pressed():
 			label_contacto.text = "👤 " + c["nombre"] + "\n  ↳ " + c["rol"] + " " + c["categoria"] + " (Poder: " + str(c["influencia"]) + ")"
 			contenedor_lista_contactos.add_child(label_contacto)
 
+func intentar_obtener_agente_por_contacto(contacto: Dictionary):
+	var pool = []
+	var rol = str(contacto.get("rol", ""))
+	if rol == "Director": pool = ["padrino_metodo", "mania_comedia"]
+	elif rol == "Productor": pool = ["mania_comedia", "sponsor_fisico"]
+	elif rol == "Maestro de Actuación": pool = ["amuleto_memoria", "padrino_metodo"]
+	else: pool = ["amuleto_memoria", "sponsor_fisico"]
+	if pool.is_empty():
+		return
+	if randi_range(1, 100) > 35:
+		return
+	var id_ag = pool.pick_random()
+	if Datos.agentes_poseidos.has(id_ag):
+		return
+	Datos.agentes_poseidos.append(id_ag)
+	for i in range(Datos.agentes_slots.size()):
+		if str(Datos.agentes_slots[i]) == "":
+			Datos.agentes_slots[i] = id_ag
+			break
+	var info_ag = Datos.catalogo_agentes.get(id_ag, {})
+	mostrar_alerta("🃏 Nuevo Agente", "Conseguiste: " + str(info_ag.get("nombre", id_ag)) + "\n" + str(info_ag.get("desc", "")))
+
 func _on_btn_volver_inicio_contactos_pressed():
 	panel_app_contactos.visible = false
 	contenedor_menu_inicio.visible = true
@@ -1596,7 +1745,9 @@ func _on_btn_app_book_pressed():
 				estrellas += "⭐"
 			var txt = "🎬 " + proy["titulo"] + "\n"
 			txt += "🎭 Papel: " + proy.get("papel", "Desconocido") + "\n" # <--- MOSTRAMOS EL PAPEL
+			txt += "🏷️ Tier: " + str(proy.get("nivel", 1)) + "\n"
 			txt += "Crítica: " + estrellas + "\n"
+			if bool(proy.get("sold_out", false)): txt += "🔥 SOLD OUT\n"
 			if proy.has("audiencia"):
 				txt += "Taquilla: " + str(proy["audiencia"]) + " espectadores\n"
 			txt += "Recaudado: $" + str(proy["ganancia"]) + "\n---"
@@ -1814,7 +1965,9 @@ func evaluar_respuesta(texto_elegido):
 		"titulo": nombre_proyecto,
 		"papel": c.get("papel", "Actor"),
 		"estrellas": estrellas,
-		"ganancia": ganancia_final
+		"ganancia": ganancia_final,
+		"nivel": c.get("nivel_minimo", 1),
+		"sold_out": bool(c.get("hubo_sold_out", false))
 	}
 	if audiencia_final > 0: registro_book["audiencia"] = audiencia_final
 	Datos.historial_proyectos.push_front(registro_book)
@@ -2330,11 +2483,22 @@ func _on_btn_app_mazo_pressed():
 		var arq_txt = _formatear_arquetipo_carta(info_carta.get("arquetipo", "versatil"))
 		var nivel_prom = 1
 		var lista_inst = Datos.obtener_instancias_por_base(id_carta, false)
+		var xp_prom = 0
+		var xp_req_prom = 100
 		if lista_inst.size() > 0:
 			var suma_niv = 0
-			for inst in lista_inst: suma_niv += Datos.obtener_nivel_carta(inst)
+			var suma_xp = 0
+			var suma_req = 0
+			for inst in lista_inst:
+				suma_niv += Datos.obtener_nivel_carta(inst)
+				if Datos.cartas_instancia.has(inst):
+					suma_xp += int(Datos.cartas_instancia[inst].get("xp_actual", 0))
+					suma_req += int(Datos.cartas_instancia[inst].get("xp_requerida", 100))
 			nivel_prom = int(round(float(suma_niv) / float(lista_inst.size())))
+			xp_prom = int(round(float(suma_xp) / float(lista_inst.size())))
+			xp_req_prom = max(1, int(round(float(suma_req) / float(lista_inst.size()))))
 		lbl_stats.text = "⭐ Poder Base: " + str(info_carta["poder"]) + " | Niv. Prom: " + str(nivel_prom) + " | Rareza: " + info_carta["rareza"] + " | Arquetipo: " + arq_txt
+		lbl_stats.text += "\n📈 XP prom. carta: " + str(xp_prom) + "/" + str(xp_req_prom)
 		
 		var lbl_desc = Label.new()
 		lbl_desc.text = "«" + info_carta["desc"] + "»"
@@ -2402,12 +2566,32 @@ func _on_btn_fusionar_cartas_pressed():
 			var btn_receta = Button.new()
 			var n1 = Datos.catalogo_cartas[ing1]["nombre"]
 			var n2 = Datos.catalogo_cartas[ing2]["nombre"]
+			var requiere_max = (rareza == "Épica" or rareza == "Legendaria")
+			var max_ok = true
+			if requiere_max:
+				var l1 = 0
+				for id_i in Datos.obtener_instancias_por_base(ing1, false): l1 = max(l1, Datos.obtener_nivel_carta(id_i))
+				var l2 = 0
+				for id_i in Datos.obtener_instancias_por_base(ing2, false): l2 = max(l2, Datos.obtener_nivel_carta(id_i))
+				if ing1 == ing2:
+					var niveles = []
+					for id_i in Datos.obtener_instancias_por_base(ing1, false): niveles.append(Datos.obtener_nivel_carta(id_i))
+					niveles.sort()
+					if niveles.size() < 2 or niveles[niveles.size()-1] < 10 or niveles[niveles.size()-2] < 10:
+						max_ok = false
+				else:
+					max_ok = (l1 >= 10 and l2 >= 10)
 			
 			btn_receta.text = "Crear: " + info_resultado["nombre"] + " (" + rareza + ")\n" + n1 + " + " + n2 + "\nHonorarios: $" + str(costo)
+			if requiere_max and not max_ok:
+				btn_receta.text += "\n🔒 Requiere Nivel 10 en ambas cartas"
+				btn_receta.disabled = true
+				btn_receta.modulate = Color(0.5, 0.5, 0.5)
 			btn_receta.custom_minimum_size = Vector2(0, 90)
 			
 			# Conectamos el botón para que ejecute la fusión al darle clic
-			btn_receta.pressed.connect(ejecutar_fusion_coach.bind(id_resultado, ing1, ing2, costo, info_resultado["nombre"]))
+			if not (requiere_max and not max_ok):
+				btn_receta.pressed.connect(ejecutar_fusion_coach.bind(id_resultado, ing1, ing2, costo, info_resultado["nombre"]))
 			cont_lista_coach.add_child(btn_receta)
 			
 	# Si no hay nada que puedas armar
@@ -2423,6 +2607,23 @@ func ejecutar_fusion_coach(id_resultado, ing1, ing2, costo, nombre_resultado):
 		return
 		
 	# Cobrar y fusionar
+	var rareza_obj = Datos.catalogo_cartas.get(id_resultado, {}).get("rareza", "Común")
+	if rareza_obj == "Épica" or rareza_obj == "Legendaria":
+		var lvl_ok = false
+		if ing1 == ing2:
+			var niveles = []
+			for id_i in Datos.obtener_instancias_por_base(ing1, false): niveles.append(Datos.obtener_nivel_carta(id_i))
+			niveles.sort()
+			lvl_ok = niveles.size() >= 2 and niveles[niveles.size()-1] >= 10 and niveles[niveles.size()-2] >= 10
+		else:
+			var l1 = 0
+			for id_i in Datos.obtener_instancias_por_base(ing1, false): l1 = max(l1, Datos.obtener_nivel_carta(id_i))
+			var l2 = 0
+			for id_i in Datos.obtener_instancias_por_base(ing2, false): l2 = max(l2, Datos.obtener_nivel_carta(id_i))
+			lvl_ok = l1 >= 10 and l2 >= 10
+		if not lvl_ok:
+			mostrar_alerta("Coach exigente", "Para crear cartas " + rareza_obj + " necesitas Nivel 10 en ambas cartas ingrediente.")
+			return
 	Datos.economia["dinero"] -= costo
 	var inst_1 = Datos.obtener_instancias_por_base(ing1, false)
 	var inst_2 = Datos.obtener_instancias_por_base(ing2, false)
@@ -2524,6 +2725,8 @@ func calcular_puntos_proyectados() -> Dictionary:
 	var prob_critico_base = 0.0
 	if mi_estres >= 40:
 		prob_critico_base = clamp((mi_estres - 35) / 320.0, 0.0, 0.25)
+	_aplicar_agentes_inicio_ronda()
+	prob_critico_base += float(bonus_agentes_ronda.get("crit_bonus", 0.0))
 	
 	var arquetipos_usados = {}
 	for id_c in seleccion_actual_ids:
@@ -2548,9 +2751,10 @@ func calcular_puntos_proyectados() -> Dictionary:
 
 		# --- 2. MULTIPLICADOR POR DEBILIDAD DEL JEFE ---
 		var multi_tipo = _multiplicador_vs_jefe(arq_jefe, arq_carta)
+		var m_ag = _mult_agente_arq(arq_carta)
 		
 		# Aplicamos el multiplicador al poder ya escalado por tus stats
-		var poder_base_carta = int((poder_escalado * multi_tipo) * penal_repeticion)
+		var poder_base_carta = int((poder_escalado * multi_tipo * m_ag) * penal_repeticion)
 		puntos_proyectados += poder_base_carta
 
 		var prob_critico = prob_critico_base
@@ -2749,8 +2953,9 @@ func _on_btn_actuar_pressed():
 		
 		# --- 2. MULTIPLICADOR POR DEBILIDAD DEL JEFE ---
 		var multi_tipo = _multiplicador_vs_jefe(arq_jefe, arq_carta)
+		var m_ag = float(bonus_agentes_ronda.get("mult_arq", {}).get(arq_carta, 1.0))
 		
-		puntos_ronda += int((poder_escalado * multi_tipo) * penal_repeticion)
+		puntos_ronda += int((poder_escalado * multi_tipo * m_ag) * penal_repeticion)
 		if Datos.lista_contactos.size() >= 3 and arq_carta == mi_arq:
 			puntos_ronda += 1
 		
@@ -2829,7 +3034,7 @@ func _on_btn_actuar_pressed():
 				
 	# 3. QUEMAR CARTAS Y LIMPIAR MESA
 	for id_c in seleccion_actual_ids:
-		Datos.otorgar_xp_carta(id_c, 18)
+		Datos.otorgar_xp_carta(id_c, 8)
 		Datos.mazo_disponible.erase(id_c) 
 		
 	for nodo in seleccion_actual_nodos:

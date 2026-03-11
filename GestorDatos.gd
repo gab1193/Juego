@@ -452,6 +452,14 @@ var mazo_disponible = [] # Cartas que aún no has usado esta semana
 var cartas_instancia = {} # id_instancia -> {"id_base","nivel","xp_actual","xp_requerida"}
 var ultimo_id_carta_instancia = 0
 const NIVEL_MAX_CARTA = 10
+var agentes_slots = ["", "", ""]
+var agentes_poseidos = []
+var catalogo_agentes = {
+	"mania_comedia": {"nombre": "🎭 Manía de Comedia", "desc": "+20% poder cartas Comerciales, +2 Exigencia por ronda.", "tipo": "build"},
+	"amuleto_memoria": {"nombre": "🧠 Amuleto de Memoria", "desc": "Si tu primera carta es Forma, recuperas +1 mulligan.", "tipo": "build"},
+	"padrino_metodo": {"nombre": "🎬 Padrino de Método", "desc": "+15% poder Método y +5% crit base.", "tipo": "contacto"},
+	"sponsor_fisico": {"nombre": "💪 Sponsor Físico", "desc": "+1 Energía al iniciar combate y +12% poder Físico.", "tipo": "build"}
+}
 # El mazo inicial con el que empieza el jugador
 # Los lugares que puedes rentar. Contactos de alto nivel (Indie/Pro) 
 # se negarán a trabajar contigo si los citas en la sala de tu casa.
@@ -719,6 +727,8 @@ func reiniciar_datos():
 	mazo_disponible = mazo_jugador.duplicate()
 	cartas_instancia.clear()
 	ultimo_id_carta_instancia = 0
+	agentes_slots = ["", "", ""]
+	agentes_poseidos.clear()
 	economia = {"dinero": 250, "deuda_bancaria": 0}
 	stats_actor = {"energia_actual": 3, "energia_maxima": 3, "reputacion": 0, "seguidores": 1, "contactos": 0, "estres": 0, "ego": 0}
 	perfil_actor = {
@@ -912,6 +922,8 @@ func guardar_partida():
 		"mazo_disponible": mazo_disponible,
 		"cartas_instancia": cartas_instancia,
 		"ultimo_id_carta_instancia": ultimo_id_carta_instancia,
+		"agentes_slots": agentes_slots,
+		"agentes_poseidos": agentes_poseidos,
 		"proyectos_activos": proyectos_activos,
 		"agenda": agenda,
 		"mercado_hoy": mercado_hoy, # <--- AÑADE ESTO AQUÍ
@@ -951,6 +963,8 @@ func cargar_partida() -> bool:
 			mazo_disponible = datos_cargados.get("mazo_disponible", mazo_disponible)
 			cartas_instancia = datos_cargados.get("cartas_instancia", cartas_instancia)
 			ultimo_id_carta_instancia = int(datos_cargados.get("ultimo_id_carta_instancia", ultimo_id_carta_instancia))
+			agentes_slots = datos_cargados.get("agentes_slots", agentes_slots)
+			agentes_poseidos = datos_cargados.get("agentes_poseidos", agentes_poseidos)
 			proyectos_activos = datos_cargados.get("proyectos_activos", proyectos_activos)
 			# Reconstruir la agenda forzando que los días sean Números (int)
 			if datos_cargados.has("agenda"):
