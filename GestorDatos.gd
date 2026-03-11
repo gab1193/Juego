@@ -340,6 +340,33 @@ var agenda = {
 	30: "Pago_Renta"
 }
 
+
+var objetivos_temporada = {
+	"prestigio": {"nombre": "Temporada de Prestigio"},
+	"fama": {"nombre": "Temporada Viral"},
+	"caja": {"nombre": "Temporada de Caja"},
+	"supervivencia": {"nombre": "Temporada de Supervivencia"}
+}
+
+var mutadores_temporada = {
+	"normal": {"nombre": "Sin Mutador"},
+	"industria_ajustada": {"nombre": "Recortes de Industria"},
+	"sponsors_agresivos": {"nombre": "Sponsors Agresivos"}
+}
+
+var temporada_actual = {
+	"numero": 1,
+	"objetivo_id": "prestigio",
+	"mutador_id": "normal"
+}
+
+var contratos_casting = [
+	{"nombre": "Estándar", "multi_pago": 1.0, "multi_xp": 1.0, "multi_seguidores": 1.0, "penalidad_fracaso": 0},
+	{"nombre": "Taquilla Garantizada", "multi_pago": 1.25, "multi_xp": 0.9, "multi_seguidores": 0.9, "penalidad_fracaso": 6},
+	{"nombre": "Autoral", "multi_pago": 0.8, "multi_xp": 1.35, "multi_seguidores": 1.1, "penalidad_fracaso": 2},
+	{"nombre": "Exposición", "multi_pago": 0.7, "multi_xp": 1.0, "multi_seguidores": 1.45, "penalidad_fracaso": 5}
+]
+
 # ==========================================
 # 🎬 BOLSA DE TRABAJO EXTENDIDA (CON TAQUILLA Y BOOK)
 # ==========================================
@@ -527,6 +554,7 @@ func reiniciar_datos():
 	agenda[30] = "Pago_Renta"
 	estado_actual = "normal"
 	hitos_redes = {"micro_influencer": false, "verificado": false}
+	temporada_actual = {"numero": 1, "objetivo_id": "prestigio", "mutador_id": "normal"}
 	
 	# Vaciamos el legado
 	ultimos_seguidores = ["@TuMama_Oficial"]
@@ -590,7 +618,8 @@ func guardar_partida():
 		"mazo_disponible": mazo_disponible,
 		"proyectos_activos": proyectos_activos,
 		"agenda": agenda,
-		"mercado_hoy": mercado_hoy # <--- AÑADE ESTO AQUÍ
+		"mercado_hoy": mercado_hoy, # <--- AÑADE ESTO AQUÍ
+		"temporada_actual": temporada_actual
 	}
 	
 	# Abrimos el archivo en modo ESCRITURA y guardamos en formato JSON
@@ -647,6 +676,7 @@ func cargar_partida() -> bool:
 			if datos_cargados.has("tiempo"):
 				for llave in datos_cargados["tiempo"]: tiempo[llave] = int(datos_cargados["tiempo"][llave])
 			mercado_hoy = datos_cargados.get("mercado_hoy", mercado_hoy)
+			temporada_actual = datos_cargados.get("temporada_actual", temporada_actual)
 			print("📂 Partida cargada con éxito. (Números corregidos)")
 			return true
 	
