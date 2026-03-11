@@ -65,6 +65,7 @@ var cartas_jugadas_turno = 0
 var max_cartas_jugables = 2
 var cartas_jugadas_ids = [] # <--- NUEVO: Guarda el ID para buscar combos
 var resolviendo_balasim = false # Evita doble click / re-entradas en resolución de ronda
+var mazo_combate_actual = []
 
 # --- REFERENCIAS CONTACTOS Y BOOK ---
 @onready var panel_app_contactos = $CapaUI/PanelSimPhone/PanelAppContactos
@@ -298,7 +299,7 @@ func actualizar_interfaz():
 		label_proyectos.visible = true
 		
 		# Modificamos el botón de ensayar
-		if Datos.mazo_jugador.is_empty():
+		if Datos.mazo_disponible.is_empty():
 			btn_ensayar.text = "Repasar Guiones 🔒 (Cero Cartas)"
 			btn_ensayar.disabled = true
 		else:
@@ -306,7 +307,7 @@ func actualizar_interfaz():
 			btn_ensayar.disabled = false
 	else:
 		label_proyectos.visible = false
-		if Datos.mazo_jugador.is_empty():
+		if Datos.mazo_disponible.is_empty():
 			btn_ensayar.text = "Ensayo Libre 🔒 (Cero Cartas)"
 			btn_ensayar.disabled = true
 		else:
@@ -376,6 +377,10 @@ func _on_btn_cerrar_info_pressed(): panel_info_stats.visible = false
 
 # --- 4. MECÁNICAS DE RUTINA ---
 func iniciar_skill_check(tipo):
+	if Datos.mazo_disponible.is_empty():
+		mostrar_alerta("📭 Sin cartas disponibles", "Ya usaste todas tus cartas esta semana. Descansa hasta el lunes para reciclar tu mazo.")
+		return
+
 	var costo_energia = 1
 	if tipo == "trabajo": costo_energia = 2
 	
@@ -2318,6 +2323,8 @@ func calcular_puntos_proyectados() -> Dictionary:
 	var max_rng = 0
 	var hay_rng_critico = false
 	var arq_jefe = casting_data_actual.get("arquetipo", "comercial")
+	if tipo_rutina == "ensayo_casa":
+		arq_jefe = "inseguridad"
 	var mi_arq = obtener_arquetipo_dominante()
 	var mi_estres = Datos.stats_actor.get("estres", 0)
 	var nivel_actual = Datos.habilidades_actor.get("nivel_general", 1)
@@ -2349,17 +2356,7 @@ func calcular_puntos_proyectados() -> Dictionary:
 			poder_escalado += bono_ego
 
 		# --- 2. MULTIPLICADOR POR DEBILIDAD DEL JEFE ---
-		var multi_tipo = 1.0
-		if arq_jefe == "metodo" and arq_carta == "instinto": multi_tipo = 1.5
-		elif arq_jefe == "metodo" and arq_carta == "comercial": multi_tipo = 0.5
-		elif arq_jefe == "comercial" and arq_carta == "metodo": multi_tipo = 1.5
-		elif arq_jefe == "comercial" and arq_carta == "fisico": multi_tipo = 0.5
-		elif arq_jefe == "fisico" and arq_carta == "comercial": multi_tipo = 1.5
-		elif arq_jefe == "fisico" and arq_carta == "forma": multi_tipo = 0.5
-		elif arq_jefe == "forma" and arq_carta == "fisico": multi_tipo = 1.5
-		elif arq_jefe == "forma" and arq_carta == "instinto": multi_tipo = 0.5
-		elif arq_jefe == "instinto" and arq_carta == "forma": multi_tipo = 1.5
-		elif arq_jefe == "instinto" and arq_carta == "metodo": multi_tipo = 0.5
+		var multi_tipo = _multiplicador_vs_jefe(arq_jefe, arq_carta)
 		
 		# Aplicamos el multiplicador al poder ya escalado por tus stats
 		var poder_base_carta = int((poder_escalado * multi_tipo) * penal_repeticion)
@@ -2442,6 +2439,36 @@ func _valor_entero_seguro(valor, por_defecto: int = 1) -> int:
 				return int(float(txt))
 	return por_defecto
 
+func _multiplicador_vs_jefe(arq_jefe: String, arq_carta: String) -> float:
+	if arq_jefe == "metodo" and arq_carta == "instinto": return 1.5
+	elif arq_jefe == "metodo" and arq_carta == "comercial": return 0.5
+	elif arq_jefe == "comercial" and arq_carta == "metodo": return 1.5
+	elif arq_jefe == "comercial" and arq_carta == "fisico": return 0.5
+	elif arq_jefe == "fisico" and arq_carta == "comercial": return 1.5
+	elif arq_jefe == "fisico" and arq_carta == "forma": return 0.5
+	elif arq_jefe == "forma" and arq_carta == "fisico": return 1.5
+	elif arq_jefe == "forma" and arq_carta == "instinto": return 0.5
+	elif arq_jefe == "instinto" and arq_carta == "forma": return 1.5
+	elif arq_jefe == "instinto" and arq_carta == "metodo": return 0.5
+	return 1.0
+
+func _texto_efecto_carta(info: Dictionary) -> String:
+	if not info.has("efecto"):
+		return ""
+	var ef = str(info.get("efecto", ""))
+	var val = info.get("valor", 0)
+	if ef == "bajar_exigencia": return "🎯 Baja Exigencia " + str(int(val))
+	if ef == "curar_estres": return "💚 Cura Estrés " + str(int(val))
+	if ef == "robar_carta": return "🃏 Roba " + str(int(val))
+	if ef == "doblar_poder_actual": return "💥 x2 Poder"
+	if ef == "multiplicar_poder": return "💥 x" + str(val) + " Poder"
+	if ef == "escalar_carisma": return "✨ +Carisma x" + str(val)
+	if ef == "restaurar_mulligan": return "🔄 +" + str(int(val)) + " Redibujos"
+	if ef == "mas_jugadas": return "➕ +" + str(int(val)) + " jugadas"
+	if ef == "sacrificar_energia": return "⚡ -" + str(int(val)) + " Energía"
+	if ef == "basura": return "☠️ Carta de Peligro"
+	return ""
+
 func _on_btn_actuar_pressed():
 	if resolviendo_balasim: return
 	resolviendo_balasim = true
@@ -2465,6 +2492,8 @@ func _on_btn_actuar_pressed():
 	var robar_cartas_extra = 0
 	
 	var arq_jefe = casting_data_actual.get("arquetipo", "comercial")
+	if tipo_rutina == "ensayo_casa":
+		arq_jefe = "inseguridad"
 	var mi_arq = obtener_arquetipo_dominante()
 	var mi_estres = Datos.stats_actor.get("estres", 0)
 	var nivel_actual = Datos.habilidades_actor.get("nivel_general", 1)
@@ -2526,17 +2555,7 @@ func _on_btn_actuar_pressed():
 			mostrar_texto_flotante("💥 ¡CRÍTICO!", label_jefe, Color(1, 0.2, 0.2), 1.5)
 		
 		# --- 2. MULTIPLICADOR POR DEBILIDAD DEL JEFE ---
-		var multi_tipo = 1.0
-		if arq_jefe == "metodo" and arq_carta == "instinto": multi_tipo = 1.5
-		elif arq_jefe == "metodo" and arq_carta == "comercial": multi_tipo = 0.5
-		elif arq_jefe == "comercial" and arq_carta == "metodo": multi_tipo = 1.5
-		elif arq_jefe == "comercial" and arq_carta == "fisico": multi_tipo = 0.5
-		elif arq_jefe == "fisico" and arq_carta == "comercial": multi_tipo = 1.5
-		elif arq_jefe == "fisico" and arq_carta == "forma": multi_tipo = 0.5
-		elif arq_jefe == "forma" and arq_carta == "fisico": multi_tipo = 1.5
-		elif arq_jefe == "forma" and arq_carta == "instinto": multi_tipo = 0.5
-		elif arq_jefe == "instinto" and arq_carta == "forma": multi_tipo = 1.5
-		elif arq_jefe == "instinto" and arq_carta == "metodo": multi_tipo = 0.5
+		var multi_tipo = _multiplicador_vs_jefe(arq_jefe, arq_carta)
 		
 		puntos_ronda += int((poder_escalado * multi_tipo) * penal_repeticion)
 		if Datos.lista_contactos.size() >= 3 and arq_carta == mi_arq:
@@ -2635,10 +2654,10 @@ func _on_btn_actuar_pressed():
 		repartir_mano_balasim(false) 
 		
 		if robar_cartas_extra > 0: 
-			var mazo_temp = Datos.mazo_jugador.duplicate()
-			mazo_temp.shuffle()
-			for i in range(min(robar_cartas_extra, mazo_temp.size())):
-				crear_boton_carta_en_mesa(mazo_temp[i])
+			mazo_combate_actual.shuffle()
+			for i in range(min(robar_cartas_extra, mazo_combate_actual.size())):
+				var id_extra = mazo_combate_actual.pop_back()
+				crear_boton_carta_en_mesa(id_extra)
 
 		if mulligans_restantes > 0: btn_mulligan.disabled = false
 		actualizar_ui_balasim(label_jefe.text.split("\n")[0].replace("⚔️ ", ""))
@@ -2734,6 +2753,7 @@ func inyectar_carta_peligro(id_peligro):
 	
 	btn_peligro.set_meta("es_peligro", true)
 	btn_peligro.set_meta("clicks", 4)
+	btn_peligro.set_meta("estres_acumulado", 0)
 
 	# Adiós animación problemática, hola color fijo seguro
 	btn_peligro.modulate = Color(1.0, 0.3, 0.3) 
@@ -2741,6 +2761,10 @@ func inyectar_carta_peligro(id_peligro):
 	btn_peligro.pressed.connect(func():
 		var c = btn_peligro.get_meta("clicks") - 1
 		if c <= 0:
+			var estres_recuperado = int(btn_peligro.get_meta("estres_acumulado", 0) * 0.5)
+			if estres_recuperado > 0:
+				Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] - estres_recuperado, 0, 100)
+				mostrar_texto_flotante("💚 -" + str(estres_recuperado) + " Estrés", btn_peligro, Color(0.3, 1.0, 0.3), 1.1)
 			escribir_log_batalla("🌟 Dominaste tus nervios y destruiste: " + info["nombre"])
 			btn_peligro.queue_free()
 		else:
@@ -2748,6 +2772,21 @@ func inyectar_carta_peligro(id_peligro):
 			btn_peligro.text = "⚠️ " + info["nombre"] + "\n(" + str(c) + " clicks más)"
 			btn_peligro.position.x += randf_range(-5, 5)
 			btn_peligro.position.y += randf_range(-5, 5)
+	)
+
+	var timer_panico = Timer.new()
+	timer_panico.wait_time = 2.0
+	timer_panico.one_shot = false
+	timer_panico.autostart = true
+	btn_peligro.add_child(timer_panico)
+	timer_panico.timeout.connect(func():
+		if not is_instance_valid(btn_peligro) or btn_peligro.is_queued_for_deletion() or not panel_balasim.visible:
+			return
+		var estres_tick = 2
+		Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] + estres_tick, 0, 100)
+		btn_peligro.set_meta("estres_acumulado", int(btn_peligro.get_meta("estres_acumulado", 0)) + estres_tick)
+		mostrar_texto_flotante("💥 +" + str(estres_tick) + " Estrés", btn_peligro, Color(1.0, 0.35, 0.35), 1.0)
+		escribir_log_batalla("⏱️ " + info["nombre"] + " te afecta: +" + str(estres_tick) + " Estrés.")
 	)
 	
 	contenedor_mano.add_child(btn_peligro) 
@@ -2758,31 +2797,28 @@ func repartir_mano_balasim(es_inicio):
 	if es_inicio:
 		for hijo in contenedor_mano.get_children():
 			hijo.queue_free()
-		Datos.mazo_disponible = Datos.mazo_jugador.duplicate()
-		Datos.mazo_disponible.shuffle()
+		mazo_combate_actual = Datos.mazo_disponible.duplicate()
+		mazo_combate_actual.shuffle()
 		
 	var cartas_vivas = 0
 	for hijo in contenedor_mano.get_children():
 		if not hijo.is_queued_for_deletion():
 			cartas_vivas += 1
 			
-	var tope_mano = min(6, Datos.mazo_jugador.size())
+	var total_disponible = mazo_combate_actual.size() + cartas_vivas
+	var tope_mano = min(6, total_disponible)
 	
 	# 🚨 SOLUCIÓN NUCLEAR: Un bucle FOR no puede crashear Windows. Máximo 50 vueltas.
 	for i in range(50):
 		if cartas_vivas >= tope_mano:
 			break
 			
-		if Datos.mazo_disponible.is_empty():
-			Datos.mazo_disponible = Datos.mazo_jugador.duplicate()
-			Datos.mazo_disponible.shuffle()
-			
-		if Datos.mazo_disponible.is_empty():
+		if mazo_combate_actual.is_empty():
 			break # Si el mazo de verdad no tiene nada, salimos
 
-		var id_c = Datos.mazo_disponible.pick_random()
+		var id_c = mazo_combate_actual.pick_random()
 		crear_boton_carta_en_mesa(id_c)
-		Datos.mazo_disponible.erase(id_c)
+		mazo_combate_actual.erase(id_c)
 		cartas_vivas += 1
 
 func crear_boton_carta_en_mesa(id_c):
@@ -2793,9 +2829,26 @@ func crear_boton_carta_en_mesa(id_c):
 	var btn_c = Button.new()
 	var arq_txt = _formatear_arquetipo_carta(info.get("arquetipo", "versatil"))
 	var linea = "⭐ " + str(info["poder"]) + " | " + arq_txt
+	var arq_jefe = casting_data_actual.get("arquetipo", "comercial")
+	if tipo_rutina == "ensayo_casa":
+		arq_jefe = "inseguridad"
+	var multi_vs_jefe = _multiplicador_vs_jefe(arq_jefe, info.get("arquetipo", "versatil"))
+	var linea_efectividad = ""
+	if multi_vs_jefe > 1.0:
+		linea_efectividad = "✅ Efectiva vs jefe (x" + str(snapped(multi_vs_jefe, 0.1)) + ")"
+		btn_c.modulate = Color(0.85, 1.0, 0.85)
+	elif multi_vs_jefe < 1.0:
+		linea_efectividad = "❌ Débil vs jefe (x" + str(snapped(multi_vs_jefe, 0.1)) + ")"
+		btn_c.modulate = Color(1.0, 0.85, 0.85)
+	else:
+		linea_efectividad = "➖ Neutral vs jefe"
+	var linea_efecto = _texto_efecto_carta(info)
 	if info.has("efecto"): linea += " ✨"
-	btn_c.text = info["nombre"] + "\n" + linea
-	btn_c.custom_minimum_size = Vector2(120, 160)
+	btn_c.text = info["nombre"] + "\n" + linea + "\n" + info.get("desc", "")
+	if linea_efecto != "": btn_c.text += "\n" + linea_efecto
+	btn_c.text += "\n" + linea_efectividad
+	btn_c.custom_minimum_size = Vector2(170, 190)
+	btn_c.autowrap_mode = TextServer.AUTOWRAP_WORD
 	btn_c.pressed.connect(jugar_carta_balasim.bind(btn_c, id_c, info))
 	contenedor_mano.add_child(btn_c)
 
