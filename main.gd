@@ -703,7 +703,7 @@ func iniciar_monologo_interior(id_carta_entrenada: String):
 		return
 	Datos.stats_actor["energia_actual"] -= 1
 	monologo_activo = true
-	monologo_tiempo = 30.0
+	monologo_tiempo = 0.0
 	monologo_concentracion = 100.0
 	monologo_estamina = 40.0
 	monologo_xp_recolectada = 0
@@ -748,9 +748,10 @@ func usar_tecnica_monologo(idx: int):
 	if monologo_estamina < float(t["costo"]):
 		return
 	monologo_estamina -= float(t["costo"])
+	var tiempo_factor = 1.0 + min(1.5, monologo_tiempo / 50.0)
 	var dot = {
 		"tiempo": float(t["dur"]),
-		"dps": float(t["dps"]),
+		"dps": float(t["dps"]) * tiempo_factor,
 		"radio": float(t["radio"]),
 		"color": t["color"],
 		"nombre": t["nombre"]
@@ -763,13 +764,14 @@ func _procesar_monologo(delta):
 	if not monologo_ui.has("root") or not is_instance_valid(monologo_ui["root"]):
 		monologo_activo = false
 		return
-	monologo_tiempo = max(0.0, monologo_tiempo - delta)
+	monologo_tiempo += delta
 	monologo_estamina = min(100.0, monologo_estamina + (10.0 * delta))
 	monologo_spawn_acum += delta
 	var dificultad = float(monologo_ui.get("dificultad", 1.0))
-	if monologo_spawn_acum >= (1.55 / dificultad):
+	var presion_tiempo = 1.0 + min(1.6, monologo_tiempo / 35.0)
+	if monologo_spawn_acum >= (1.65 / (dificultad * presion_tiempo)):
 		monologo_spawn_acum = 0.0
-		_spawn_enemigo_monologo()
+		_spawn_enemigo_monologo(presion_tiempo)
 	var centro = Vector2(580, 330)
 	for i in range(monologo_dots.size() - 1, -1, -1):
 		monologo_dots[i]["tiempo"] = float(monologo_dots[i]["tiempo"]) - delta
@@ -801,18 +803,19 @@ func _procesar_monologo(delta):
 	actualizar_ui_monologo()
 	if monologo_concentracion <= 0.0:
 		finalizar_monologo_interior(false)
-	elif monologo_tiempo <= 0.0:
+	elif monologo_tiempo >= 95.0:
 		finalizar_monologo_interior(true)
 
-func _spawn_enemigo_monologo():
+func _spawn_enemigo_monologo(presion_tiempo: float = 1.0):
 	if not monologo_ui.has("root"):
 		return
 	var e = Label.new()
 	var t = ["Duda", "Ruido", "Inseguridad", "Miedo escénico"].pick_random()
 	e.text = t + " (10)"
 	e.set_meta("tipo", t)
-	e.set_meta("hp", 10.0 + (4.0 * float(monologo_ui.get("dificultad", 1.0))))
-	e.set_meta("dmg", 7.0 + (2.0 * float(monologo_ui.get("dificultad", 1.0))))
+	var dif = float(monologo_ui.get("dificultad", 1.0))
+	e.set_meta("hp", 10.0 + (4.0 * dif * presion_tiempo))
+	e.set_meta("dmg", 7.0 + (2.0 * dif * presion_tiempo))
 	e.add_theme_color_override("font_color", Color(1.0, 0.5, 0.5))
 	var lado = randi_range(0, 3)
 	if lado == 0: e.position = Vector2(randf_range(0, 1160), 20)
@@ -826,16 +829,17 @@ func actualizar_ui_monologo():
 	if not monologo_ui.has("lbl_top"):
 		return
 	monologo_ui["lbl_top"].text = "🧠 Concentración: " + str(int(monologo_concentracion)) + "/100"
-	monologo_ui["lbl_time"].text = "⏳ Tiempo: " + str(snapped(monologo_tiempo, 0.1)) + "s"
+	monologo_ui["lbl_time"].text = "⏳ Tiempo sobrevivido: " + str(snapped(monologo_tiempo, 0.1)) + "s"
 	monologo_ui["lbl_est"].text = "⚡ Estamina mental: " + str(int(monologo_estamina)) + " | XP acumulada carta: " + str(monologo_xp_recolectada) + " | Zonas activas: " + str(monologo_dots.size())
 
 func finalizar_monologo_interior(fue_victoria: bool):
 	monologo_activo = false
+	var xp_por_tiempo = int(monologo_tiempo * 0.9)
 	var bonus = 0
 	if fue_victoria:
-		bonus = 55
-	var xp_total = monologo_xp_recolectada + bonus
-	xp_total = int(clamp(xp_total, 15, 120))
+		bonus = 40
+	var xp_total = monologo_xp_recolectada + xp_por_tiempo + bonus
+	xp_total = int(clamp(xp_total, 12, 150))
 	var xp_actor = 0
 	var txt_carta = ""
 	if carta_entrenando_id != "":
@@ -843,15 +847,15 @@ func finalizar_monologo_interior(fue_victoria: bool):
 		Datos.otorgar_xp_carta(carta_entrenando_id, xp_total)
 		var despues = _describir_xp_carta(carta_entrenando_id)
 		txt_carta = "\nCarta: " + antes + " ➜ " + despues
-		xp_actor = 10 + int(xp_total / 8.0)
+		xp_actor = 8 + int(monologo_tiempo / 6.0) + int(xp_total / 12.0)
 		Datos.habilidades_actor["xp_actual"] += xp_actor
 	if monologo_ui.has("root") and is_instance_valid(monologo_ui["root"]):
 		monologo_ui["root"].queue_free()
 	monologo_ui.clear()
 	monologo_dots.clear()
-	var t = "Perdiste concentración."
+	var t = "Perdiste concentración tras " + str(snapped(monologo_tiempo, 0.1)) + "s."
 	if fue_victoria:
-		t = "Sostuviste el foco hasta el final."
+		t = "Resististe " + str(snapped(monologo_tiempo, 0.1)) + "s y dominaste el monólogo."
 	mostrar_alerta("🧠 Monólogo Interior", t + "\nXP Carta: +" + str(xp_total) + txt_carta + "\nXP Personaje: +" + str(xp_actor))
 	comprobar_level_up()
 	actualizar_interfaz()
@@ -1359,6 +1363,58 @@ func _describir_xp_carta(id_inst: String) -> String:
 	var d = Datos.cartas_instancia[id_inst]
 	return "Niv " + str(d.get("nivel", 1)) + " | XP " + str(d.get("xp_actual", 0)) + "/" + str(d.get("xp_requerida", 100))
 
+func _factor_progreso_global() -> float:
+	var nivel = float(Datos.habilidades_actor.get("nivel_general", 1))
+	var semana = max(1.0, ceil(float(Datos.tiempo.get("dia", 1)) / 7.0))
+	return 1.0 + ((nivel - 1.0) * 0.08) + ((semana - 1.0) * 0.03)
+
+func _perfil_escalado_casting(id_base: String, base_casting: Dictionary, progreso: float) -> Dictionary:
+	var imp = int(base_casting.get("importancia", 1))
+	var dificultad_base = float(base_casting.get("dificultad", 1))
+	var seg_base = int(base_casting.get("seguidores_minimos", 0))
+	var paga_base = int(base_casting.get("paga", 0))
+	var xp_base = int(base_casting.get("recompensa_xp", 40))
+	var seg_reward_base = int(base_casting.get("recompensa_seguidores", 10))
+
+	var dificultad_obj = dificultad_base + ((progreso - 1.0) * 0.8)
+	var seg_obj = int(seg_base * (0.65 + (imp * 0.25) + ((progreso - 1.0) * 0.5)))
+	var paga_obj = int(paga_base * (0.85 + (imp * 0.2) + ((progreso - 1.0) * 0.45)))
+	var xp_obj = int(xp_base * (0.9 + (imp * 0.15) + ((progreso - 1.0) * 0.4)))
+	var seg_reward_obj = int(seg_reward_base * (0.95 + (imp * 0.2) + ((progreso - 1.0) * 0.5)))
+
+	# Ajustes por fantasía/tema (inmersión): fiesta infantil y extras no deben sentirse absurdos.
+	if id_base == "animador_fiestas":
+		dificultad_obj *= 0.8
+		seg_obj = int(seg_obj * 0.35)
+		paga_obj = max(40, int(paga_obj * 0.85))
+		xp_obj = int(xp_obj * 0.8)
+	elif id_base == "extra_pelicula":
+		dificultad_obj *= 0.85
+		seg_obj = int(seg_obj * 0.4)
+		xp_obj = int(xp_obj * 0.85)
+	elif id_base.find("festival") != -1 or id_base.find("teatro_nacional") != -1:
+		dificultad_obj *= 1.25
+		xp_obj = int(xp_obj * 1.25)
+
+	# Seguridad por tier
+	if imp == 1:
+		dificultad_obj = clamp(dificultad_obj, 1.0, 2.6)
+		seg_obj = clamp(seg_obj, 0, 280)
+	elif imp == 2:
+		dificultad_obj = clamp(dificultad_obj, 2.0, 4.4)
+		seg_obj = clamp(seg_obj, 60, 1200)
+	else:
+		dificultad_obj = clamp(dificultad_obj, 3.2, 6.8)
+		seg_obj = clamp(seg_obj, 300, 6500)
+
+	return {
+		"dificultad": snapped(dificultad_obj, 0.1),
+		"seguidores_minimos": seg_obj,
+		"paga": max(0, paga_obj),
+		"recompensa_xp": max(20, xp_obj),
+		"recompensa_seguidores": max(5, seg_reward_obj)
+	}
+
 func _agentes_activos() -> Array:
 	var act = []
 	for a in Datos.agentes_slots:
@@ -1397,17 +1453,24 @@ func generar_castings_del_dia():
 	todas_las_llaves.shuffle()
 	var objetivo = Datos.temporada_actual.get("objetivo_id", "")
 	var mutador = Datos.temporada_actual.get("mutador_id", "")
+	var progreso = _factor_progreso_global()
 	
 	for i in range(min(3, todas_las_llaves.size())):
 		var id_base = todas_las_llaves[i]
 		var base_casting = Datos.castings_disponibles[id_base].duplicate()
 		var mi_nivel = Datos.habilidades_actor["nivel_general"]
-		var nivel_generado = max(1, randi_range(mi_nivel - 1, mi_nivel + 2))
+		var tier = int(base_casting.get("importancia", 1))
+		var min_rel = max(1, int(mi_nivel + (tier - 2)))
+		var max_rel = max(min_rel, int(mi_nivel + tier))
+		var nivel_generado = randi_range(min_rel, max_rel)
 		
 		base_casting["nivel_minimo"] = nivel_generado
-		base_casting["seguidores_minimos"] = int(nivel_generado * randi_range(35, 70))
-		base_casting["paga"] = int(nivel_generado * randi_range(25, 55))
-		base_casting["recompensa_xp"] = int(nivel_generado * randi_range(35, 65))
+		var perfil = _perfil_escalado_casting(id_base, base_casting, progreso)
+		base_casting["seguidores_minimos"] = int(perfil["seguidores_minimos"])
+		base_casting["paga"] = int(perfil["paga"])
+		base_casting["recompensa_xp"] = int(perfil["recompensa_xp"])
+		base_casting["recompensa_seguidores"] = int(perfil["recompensa_seguidores"])
+		base_casting["dificultad"] = float(perfil["dificultad"])
 		base_casting["volatilidad"] = randi_range(10, 40)
 
 		var contrato = Datos.contratos_casting.pick_random().duplicate(true)
@@ -1438,9 +1501,9 @@ func generar_castings_del_dia():
 		base_casting["rendimiento_acumulado"] = 0
 		base_casting["hype_generado"] = 0
 		base_casting["book_req"] = {}
-		if nivel_generado >= 5:
+		if nivel_generado >= 6 and tier >= 3:
 			base_casting["book_req"] = {"tier3_4est": 2, "sold_outs": 1}
-		elif nivel_generado >= 4:
+		elif nivel_generado >= 5 and tier >= 2:
 			base_casting["book_req"] = {"tier3_4est": 1, "sold_outs": 0}
 		
 		if "corto" in id_base or "pelicula" in id_base or "drama" in id_base: base_casting["arquetipo"] = "metodo"
@@ -1463,6 +1526,7 @@ func _on_btn_app_castings_pressed():
 		
 		var texto_boton = casting["titulo_unico"] + "\n"
 		texto_boton += "🎭 Papel: " + casting.get("papel", "Actor") + "\n" 
+		texto_boton += "🏷️ Tier " + str(casting.get("importancia", 1)) + " | Dificultad " + str(snapped(float(casting.get("dificultad", 1.0)), 0.1)) + "\n"
 		texto_boton += "Pide: Nvl " + str(casting["nivel_minimo"]) + " | " + str(casting["seguidores_minimos"]) + " Seg.\n"
 		texto_boton += "🏁 Temporada: " + Datos.objetivos_temporada[Datos.temporada_actual.get("objetivo_id", "prestigio")]["nombre"] + "\n"
 		
