@@ -58,7 +58,8 @@ var historial_proyectos = [] # ¡NUEVO! El "Book" o currículum del actor
 var mi_compania = {
 	"fundada": false,
 	"nombre": "Sin Nombre",
-	"id_espacio_actual": "sala_casa"
+	"id_espacio_actual": "sala_casa",
+	"espacios_propios": []
 }
 
 # ==========================================
@@ -467,60 +468,25 @@ var espacios_disponibles = {
 	"sala_casa": {
 		"nombre": "Sala de tu Casa",
 		"renta_mensual": 0,
+		"precio_compra": 0,
 		"nivel_max_contactos": "Local",
 		"capacidad_equipo": 2,
-		"capacidad_publico": 10 # Tus tías y dos vecinos
+		"capacidad_publico": 10
 	},
-	"bodega_indie": {
-		"nombre": "Bodega Adaptada",
-		"renta_mensual": 150,
-		"nivel_max_contactos": "Indie",
-		"capacidad_equipo": 4,
-		"capacidad_publico": 40 # Aforo indie
-	},
-	"estudio_pro": {
-		"nombre": "Estudio Profesional",
-		"renta_mensual": 600,
-		"nivel_max_contactos": "Profesional",
-		"capacidad_equipo": 10,
-		"capacidad_publico": 150 # Teatro mediano
-	},
-	"teatro_propio": {
-		"nombre": "Teatro Adquirido",
-		"renta_mensual": 2000,
-		"nivel_max_contactos": "Profesional",
-		"capacidad_equipo": 50,
-		"capacidad_publico": 500 # El gran sueño
-	}
+	"cochera_limpia": {"nombre": "Cochera Limpia", "renta_mensual": 50, "precio_compra": 750, "nivel_max_contactos": "Local", "capacidad_equipo": 3, "capacidad_publico": 15},
+	"cafe_cultural": {"nombre": "Café Cultural", "renta_mensual": 150, "precio_compra": 2250, "nivel_max_contactos": "Indie", "capacidad_equipo": 5, "capacidad_publico": 40},
+	"foro_subterraneo": {"nombre": "Foro Subterráneo Indie", "renta_mensual": 400, "precio_compra": 6000, "nivel_max_contactos": "Indie", "capacidad_equipo": 8, "capacidad_publico": 100},
+	"teatro_camara": {"nombre": "Teatro de Cámara Clásico", "renta_mensual": 1200, "precio_compra": 18000, "nivel_max_contactos": "Profesional", "capacidad_equipo": 15, "capacidad_publico": 250},
+	"gran_teatro": {"nombre": "El Gran Teatro de la Ciudad", "renta_mensual": 3500, "precio_compra": 52500, "nivel_max_contactos": "Profesional", "capacidad_equipo": 40, "capacidad_publico": 800}
 }
 # ==========================================
 # 🎭 FORMATOS DE PRODUCCIÓN PROPIA (NUEVO)
 # ==========================================
 var formatos_produccion = {
-	"monologo_indie": {
-		"titulo": "Monólogo Independiente",
-		"descripcion": "Tú pagas todo. Te quedas el 100% de la taquilla.",
-		"costo_montaje": 300,
-		"rol_necesario": "Director",
-		"porcentaje_ganancia": 1.0, # 100%
-		"corte_boleto": 15,
-		"dias_de_trabajo": 3,
-		"espacio_minimo": 2, # Capacidad del local
-		"dificultad": 2,
-		"importancia": 2
-	},
-	"obra_patrocinada": {
-		"titulo": "Obra Patrocinada",
-		"descripcion": "Un Productor paga el montaje, pero te quita el 70% de taquilla.",
-		"costo_montaje": 0,
-		"rol_necesario": "Productor",
-		"porcentaje_ganancia": 0.3, # Solo te quedas el 30%
-		"corte_boleto": 25,
-		"dias_de_trabajo": 4,
-		"espacio_minimo": 4, # Requiere al menos la Bodega Indie
-		"dificultad": 3,
-		"importancia": 3
-	}
+	"monologo_bolsillo": {"titulo": "Monólogo de Bolsillo", "descripcion": "Formato pequeño para testear material.", "costo_montaje": 200, "corte_boleto": 12, "dias_de_trabajo": 2, "aforo_minimo": 15, "dificultad": 1.7, "importancia": 1, "requiere_taquilla": true},
+	"obra_reparto": {"titulo": "Obra de Reparto", "descripcion": "Montaje estándar con elenco completo.", "costo_montaje": 800, "corte_boleto": 20, "dias_de_trabajo": 4, "aforo_minimo": 50, "dificultad": 2.8, "importancia": 2, "requiere_taquilla": true},
+	"musical_gran_formato": {"titulo": "Musical / Gran Formato", "descripcion": "Gran producción de alto riesgo y alta recompensa.", "costo_montaje": 3000, "corte_boleto": 35, "dias_de_trabajo": 6, "aforo_minimo": 200, "dificultad": 4.2, "importancia": 3, "requiere_taquilla": true},
+	"cortometraje_indie": {"titulo": "Cortometraje Indie", "descripcion": "Proyecto para festivales y prestigio, sin taquilla directa.", "costo_montaje": 1500, "corte_boleto": 0, "dias_de_trabajo": 3, "aforo_minimo": 0, "dificultad": 3.2, "importancia": 3, "requiere_taquilla": false}
 }
 var estado_actual = "normal" # Puede ser: normal, inspirado, torpe, viral, resaca
 var hitos_redes = {
@@ -739,7 +705,7 @@ func reiniciar_datos():
 	"instinto": 0    
 }
 	tiempo = {"dia": 1, "fase_dia": "Mañana"}
-	mi_compania = {"fundada": false, "nombre": "Sin Nombre", "id_espacio_actual": "sala_casa"}
+	mi_compania = {"fundada": false, "nombre": "Sin Nombre", "id_espacio_actual": "sala_casa", "espacios_propios": []}
 	habilidades_actor = {
 		"nivel_general": 1, "xp_actual": 0, "xp_requerida": 100, "puntos_habilidad": 0,
 		"tecnica_vocal": 1, "expresion_corporal": 1, "carisma": 1, "memoria": 1
@@ -927,7 +893,10 @@ func guardar_partida():
 		"proyectos_activos": proyectos_activos,
 		"agenda": agenda,
 		"mercado_hoy": mercado_hoy, # <--- AÑADE ESTO AQUÍ
-		"temporada_actual": temporada_actual
+		"temporada_actual": temporada_actual,
+		"mi_compania": mi_compania,
+		"lista_contactos": lista_contactos,
+		"historial_proyectos": historial_proyectos
 	}
 	
 	# Abrimos el archivo en modo ESCRITURA y guardamos en formato JSON
@@ -940,25 +909,21 @@ func guardar_partida():
 
 func cargar_partida() -> bool:
 	# Verificamos si existe un archivo de guardado previo
-	
 	if not FileAccess.file_exists(RUTA_GUARDADO):
 		print("No se encontró archivo de guardado.")
 		return false
-		
-	# Abrimos en modo LECTURA
+	
 	var archivo = FileAccess.open(RUTA_GUARDADO, FileAccess.READ)
 	if archivo:
 		var json_string = archivo.get_as_text()
 		archivo.close()
 		
-		# Convertimos el texto JSON de vuelta a variables de Godot
 		var json = JSON.new()
 		var error = json.parse(json_string)
-		
 		if error == OK:
 			var datos_cargados = json.data
 			
-			# 1. Variables Complejas (Listas y Textos)
+			# 1. Variables complejas
 			mazo_jugador = datos_cargados.get("mazo_jugador", mazo_jugador)
 			mazo_disponible = datos_cargados.get("mazo_disponible", mazo_disponible)
 			cartas_instancia = datos_cargados.get("cartas_instancia", cartas_instancia)
@@ -966,27 +931,34 @@ func cargar_partida() -> bool:
 			agentes_slots = datos_cargados.get("agentes_slots", agentes_slots)
 			agentes_poseidos = datos_cargados.get("agentes_poseidos", agentes_poseidos)
 			proyectos_activos = datos_cargados.get("proyectos_activos", proyectos_activos)
-			# Reconstruir la agenda forzando que los días sean Números (int)
+			mi_compania = datos_cargados.get("mi_compania", mi_compania)
+			if not mi_compania.has("espacios_propios"):
+				mi_compania["espacios_propios"] = []
+			lista_contactos = datos_cargados.get("lista_contactos", lista_contactos)
+			historial_proyectos = datos_cargados.get("historial_proyectos", historial_proyectos)
+			
 			if datos_cargados.has("agenda"):
 				agenda.clear()
 				for llave in datos_cargados["agenda"].keys():
 					agenda[int(llave)] = datos_cargados["agenda"][llave]
 			
-			# 2. Diccionarios de Números (Forzamos a que sean Enteros)
+			# 2. Diccionarios numéricos
 			if datos_cargados.has("economia"):
-				for llave in datos_cargados["economia"]: economia[llave] = int(datos_cargados["economia"][llave])
-				
+				for llave in datos_cargados["economia"]:
+					economia[llave] = int(datos_cargados["economia"][llave])
 			if datos_cargados.has("stats_actor"):
-				for llave in datos_cargados["stats_actor"]: stats_actor[llave] = int(datos_cargados["stats_actor"][llave])
-				
+				for llave in datos_cargados["stats_actor"]:
+					stats_actor[llave] = int(datos_cargados["stats_actor"][llave])
 			if datos_cargados.has("habilidades_actor"):
-				for llave in datos_cargados["habilidades_actor"]: habilidades_actor[llave] = int(datos_cargados["habilidades_actor"][llave])
-				
+				for llave in datos_cargados["habilidades_actor"]:
+					habilidades_actor[llave] = int(datos_cargados["habilidades_actor"][llave])
 			if datos_cargados.has("perfil_actor"):
-				for llave in datos_cargados["perfil_actor"]: perfil_actor[llave] = int(datos_cargados["perfil_actor"][llave])
-				
+				for llave in datos_cargados["perfil_actor"]:
+					perfil_actor[llave] = int(datos_cargados["perfil_actor"][llave])
 			if datos_cargados.has("tiempo"):
-				for llave in datos_cargados["tiempo"]: tiempo[llave] = int(datos_cargados["tiempo"][llave])
+				for llave in datos_cargados["tiempo"]:
+					tiempo[llave] = int(datos_cargados["tiempo"][llave])
+			
 			mercado_hoy = datos_cargados.get("mercado_hoy", mercado_hoy)
 			temporada_actual = datos_cargados.get("temporada_actual", temporada_actual)
 			_actualizar_mazos_a_instancias()
