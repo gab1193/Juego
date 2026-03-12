@@ -1551,6 +1551,161 @@ func _mult_agente_arq(arq: String) -> float:
 		m *= float(b.get("mult_forma", 1.0))
 	return m
 
+func _book_stats() -> Dictionary:
+	var tier3_4est = 0
+	var sold_outs = 0
+	for p in Datos.historial_proyectos:
+		if int(p.get("nivel", 1)) >= 5 and int(p.get("estrellas", 0)) >= 4:
+			tier3_4est += 1
+		if bool(p.get("sold_out", false)):
+			sold_outs += 1
+	return {"tier3_4est": tier3_4est, "sold_outs": sold_outs}
+
+func _validar_requisitos_book(casting: Dictionary) -> Dictionary:
+	var req = casting.get("book_req", {})
+	if req.is_empty():
+		return {"ok": true, "faltan": ""}
+	var stats = _book_stats()
+	var faltantes = []
+	var r_tier = int(req.get("tier3_4est", 0))
+	var r_so = int(req.get("sold_outs", 0))
+	if stats["tier3_4est"] < r_tier:
+		faltantes.append("Tier 3 con 4⭐: " + str(stats["tier3_4est"]) + "/" + str(r_tier))
+	if stats["sold_outs"] < r_so:
+		faltantes.append("Sold Out: " + str(stats["sold_outs"]) + "/" + str(r_so))
+	return {"ok": faltantes.is_empty(), "faltan": " | ".join(faltantes)}
+
+func _describir_xp_carta(id_inst: String) -> String:
+	if not Datos.cartas_instancia.has(id_inst):
+		return ""
+	var d = Datos.cartas_instancia[id_inst]
+	return "Niv " + str(d.get("nivel", 1)) + " | XP " + str(d.get("xp_actual", 0)) + "/" + str(d.get("xp_requerida", 100))
+
+func _factor_progreso_global() -> float:
+	var nivel = float(Datos.habilidades_actor.get("nivel_general", 1))
+	var semana = max(1.0, ceil(float(Datos.tiempo.get("dia", 1)) / 7.0))
+	return 1.0 + ((nivel - 1.0) * 0.08) + ((semana - 1.0) * 0.03)
+
+func _perfil_escalado_casting(id_base: String, base_casting: Dictionary, progreso: float) -> Dictionary:
+	var imp = int(base_casting.get("importancia", 1))
+	var dificultad_base = float(base_casting.get("dificultad", 1))
+	var seg_base = int(base_casting.get("seguidores_minimos", 0))
+	var paga_base = int(base_casting.get("paga", 0))
+	var xp_base = int(base_casting.get("recompensa_xp", 40))
+	var seg_reward_base = int(base_casting.get("recompensa_seguidores", 10))
+
+	var dificultad_obj = dificultad_base + ((progreso - 1.0) * 0.8)
+	var seg_obj = int(seg_base * (0.65 + (imp * 0.25) + ((progreso - 1.0) * 0.5)))
+	var paga_obj = int(paga_base * (0.85 + (imp * 0.2) + ((progreso - 1.0) * 0.45)))
+	var xp_obj = int(xp_base * (0.9 + (imp * 0.15) + ((progreso - 1.0) * 0.4)))
+	var seg_reward_obj = int(seg_reward_base * (0.95 + (imp * 0.2) + ((progreso - 1.0) * 0.5)))
+
+	# Ajustes por fantasía/tema (inmersión): fiesta infantil y extras no deben sentirse absurdos.
+	if id_base == "animador_fiestas":
+		dificultad_obj *= 0.8
+		seg_obj = int(seg_obj * 0.35)
+		paga_obj = max(40, int(paga_obj * 0.85))
+		xp_obj = int(xp_obj * 0.8)
+	elif id_base == "corto_estudiantil":
+		dificultad_obj *= 0.75
+		seg_obj = int(seg_obj * 0.25)
+		xp_obj = int(xp_obj * 0.85)
+	elif id_base == "extra_pelicula":
+		dificultad_obj *= 0.85
+		seg_obj = int(seg_obj * 0.4)
+		xp_obj = int(xp_obj * 0.85)
+	elif id_base.find("festival") != -1 or id_base.find("teatro_nacional") != -1:
+		dificultad_obj *= 1.25
+		xp_obj = int(xp_obj * 1.25)
+
+	# Seguridad por tier
+	if imp == 1:
+		dificultad_obj = clamp(dificultad_obj, 1.0, 2.6)
+		seg_obj = clamp(seg_obj, 0, 280)
+	elif imp == 2:
+		dificultad_obj = clamp(dificultad_obj, 2.0, 4.4)
+		seg_obj = clamp(seg_obj, 60, 1200)
+	else:
+		dificultad_obj = clamp(dificultad_obj, 3.2, 6.8)
+		seg_obj = clamp(seg_obj, 300, 6500)
+
+	return {
+		"dificultad": snapped(dificultad_obj, 0.1),
+		"seguidores_minimos": seg_obj,
+		"paga": max(0, paga_obj),
+		"recompensa_xp": max(20, xp_obj),
+		"recompensa_seguidores": max(5, seg_reward_obj)
+	}
+
+func _tier_casting_por_id(id_base: String, base_casting: Dictionary) -> int:
+	if id_base in ["animador_fiestas", "extra_pelicula", "corto_estudiantil", "obra_universitaria", "microteatro_bar"]:
+		return 1
+	if id_base in ["doblaje_indie", "locutor_radio", "comercial_local", "obra_independiente", "standup_club"]:
+		return 2
+	if id_base in ["teatro_nacional", "serie_streaming", "campana_global", "pelicula_indie_festival"]:
+		return 3
+	return int(base_casting.get("importancia", 1))
+
+func _rango_nivel_tier(tier: int) -> Vector2i:
+	if tier <= 1:
+		return Vector2i(1, 3)
+	if tier == 2:
+		return Vector2i(3, 6)
+	return Vector2i(5, 9)
+
+func _tier_maximo_por_nivel(nivel: int) -> int:
+	if nivel < 4:
+		return 1
+	if nivel < 7:
+		return 2
+	return 3
+
+func _exigencia_casting_balance(casting: Dictionary) -> Dictionary:
+	var niv = max(1, int(casting.get("nivel_minimo", 1)))
+	var tier = max(1, int(casting.get("importancia", 1)))
+	var dif = max(1.0, float(casting.get("dificultad", 1.0)))
+	var base = 10 + (niv * 5) + int(dif * 4.0) + (tier * 3)
+	var variacion = randi_range(-3, 6)
+	var exigencia = max(8, base + variacion)
+	var rondas = 2
+	if tier >= 2 or dif >= 3.0:
+		rondas += 1
+	if tier >= 3 and dif >= 4.0:
+		rondas += 1
+	return {"exigencia": exigencia, "rondas": rondas}
+
+func _agentes_activos() -> Array:
+	var act = []
+	for a in Datos.agentes_slots:
+		if str(a) != "":
+			act.append(str(a))
+	return act
+
+func _aplicar_agentes_inicio_ronda():
+	bonus_agentes_ronda = {"mult_arq": {}, "crit_bonus": 0.0}
+	for id_ag in _agentes_activos():
+		if id_ag == "mania_comedia":
+			exigencia_director += 2
+			bonus_agentes_ronda["mult_arq"]["comercial"] = 1.2
+		elif id_ag == "amuleto_memoria":
+			if seleccion_actual_ids.size() > 0:
+				var prim = Datos.obtener_info_carta(seleccion_actual_ids[0])
+				if prim.get("arquetipo", "") == "forma":
+					mulligans_restantes += 1
+		elif id_ag == "padrino_metodo":
+			bonus_agentes_ronda["mult_arq"]["metodo"] = 1.15
+			bonus_agentes_ronda["crit_bonus"] = float(bonus_agentes_ronda.get("crit_bonus", 0.0)) + 0.05
+		elif id_ag == "sponsor_fisico":
+			bonus_agentes_ronda["mult_arq"]["fisico"] = 1.12
+
+func _mult_agente_arq(arq: String) -> float:
+	var m = 1.0
+	for id_ag in _agentes_activos():
+		if id_ag == "mania_comedia" and arq == "comercial": m *= 1.2
+		elif id_ag == "padrino_metodo" and arq == "metodo": m *= 1.15
+		elif id_ag == "sponsor_fisico" and arq == "fisico": m *= 1.12
+	return m
+
 func generar_castings_del_dia():
 	castings_de_hoy.clear()
 	var todas_las_llaves = Datos.castings_disponibles.keys()
