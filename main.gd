@@ -5,13 +5,14 @@ extends Node2D
 @onready var label_dia = $CapaUI/LabelDia
 @onready var label_dinero = $CapaUI/LabelDinero
 @onready var label_energia = $CapaUI/LabelEnergia
-@onready var label_estres = $CapaUI/PanelStats/VBoxContainer/LabelEstres
-@onready var label_ego = $CapaUI/PanelStats/VBoxContainer/LabelEgo
+@onready var label_estres = $CapaUI/LabelEstres
+@onready var label_ego = $CapaUI/LabelEgo
 @onready var label_nivel = $CapaUI/PanelStats/VBoxContainer/LabelNivel
 @onready var label_stats = $CapaUI/PanelStats/VBoxContainer/LabelStats
 @onready var label_arquetipo = $CapaUI/LabelArquetipo
 @onready var label_proyectos = $CapaUI/PanelStats/VBoxContainer/LabelProyectos # <--- NUEVO MEDIDOR
 @onready var panel_level_up = $CapaUI/PanelLevelUp
+@onready var panel_contactos = $CapaUI/LabelContactos
 # --- REFERENCIAS CARTAS / BALASIM ---
 @onready var panel_app_mazo = $CapaUI/PanelSimPhone/PanelAppMazo
 @onready var contenedor_lista_mazo = $CapaUI/PanelSimPhone/PanelAppMazo/VBoxContainer/ScrollContainer/ContenedorListaMazo
