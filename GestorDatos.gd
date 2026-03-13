@@ -63,7 +63,8 @@ var mi_compania = {
 	"mejoras_locales": {},
 	"prestigio": 0,
 	"producciones_realizadas": 0,
-	"tier_empresa": 0
+	"tier_empresa": 0,
+	"rentas_activas": {}
 }
 
 # ==========================================
@@ -759,7 +760,8 @@ func reiniciar_datos():
 		"mejoras_locales": {},
 		"prestigio": 0,
 		"producciones_realizadas": 0,
-		"tier_empresa": 0
+		"tier_empresa": 0,
+		"rentas_activas": {}
 	}
 	habilidades_actor = {
 		"nivel_general": 1, "xp_actual": 0, "xp_requerida": 100, "puntos_habilidad": 0,
@@ -1029,6 +1031,8 @@ func cargar_partida() -> bool:
 				mi_compania["producciones_realizadas"] = 0
 			if not mi_compania.has("tier_empresa"):
 				mi_compania["tier_empresa"] = 0
+			if not mi_compania.has("rentas_activas"):
+				mi_compania["rentas_activas"] = {}
 			lista_contactos = datos_cargados.get("lista_contactos", lista_contactos)
 			historial_proyectos = datos_cargados.get("historial_proyectos", historial_proyectos)
 			
