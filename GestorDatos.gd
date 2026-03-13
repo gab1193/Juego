@@ -58,7 +58,9 @@ var historial_proyectos = [] # ¡NUEVO! El "Book" o currículum del actor
 var mi_compania = {
 	"fundada": false,
 	"nombre": "Sin Nombre",
-	"id_espacio_actual": "sala_casa"
+	"id_espacio_actual": "sala_casa",
+	"espacios_propios": [],
+	"mejoras_locales": {}
 }
 
 # ==========================================
@@ -449,67 +451,44 @@ var combos_balasim = {
 
 var mazo_jugador = [] # Inicias sin ninguna técnica actoral
 var mazo_disponible = [] # Cartas que aún no has usado esta semana
+var cartas_instancia = {} # id_instancia -> {"id_base","nivel","xp_actual","xp_requerida"}
+var ultimo_id_carta_instancia = 0
+const NIVEL_MAX_CARTA = 10
+var agentes_slots = ["", "", ""]
+var agentes_poseidos = []
+var catalogo_agentes = {
+	"mania_comedia": {"nombre": "🎭 Manía de Comedia", "desc": "+20% poder cartas Comerciales, +2 Exigencia por ronda.", "tipo": "build"},
+	"amuleto_memoria": {"nombre": "🧠 Amuleto de Memoria", "desc": "Si tu primera carta es Forma, recuperas +1 mulligan.", "tipo": "build"},
+	"padrino_metodo": {"nombre": "🎬 Padrino de Método", "desc": "+15% poder Método y +5% crit base.", "tipo": "contacto"},
+	"sponsor_fisico": {"nombre": "💪 Sponsor Físico", "desc": "+1 Energía al iniciar combate y +12% poder Físico.", "tipo": "build"}
+}
 # El mazo inicial con el que empieza el jugador
 # Los lugares que puedes rentar. Contactos de alto nivel (Indie/Pro) 
 # se negarán a trabajar contigo si los citas en la sala de tu casa.
 var espacios_disponibles = {
 	"sala_casa": {
-		"nombre": "Sala de tu Casa",
+		"nombre": "Cuarto de Azotea",
 		"renta_mensual": 0,
+		"precio_compra": 0,
+		"tier": 0,
 		"nivel_max_contactos": "Local",
-		"capacidad_equipo": 2,
-		"capacidad_publico": 10 # Tus tías y dos vecinos
+		"capacidad_equipo": 1,
+		"capacidad_publico": 5,
+		"especialidad": "ninguna"
 	},
-	"bodega_indie": {
-		"nombre": "Bodega Adaptada",
-		"renta_mensual": 150,
-		"nivel_max_contactos": "Indie",
-		"capacidad_equipo": 4,
-		"capacidad_publico": 40 # Aforo indie
-	},
-	"estudio_pro": {
-		"nombre": "Estudio Profesional",
-		"renta_mensual": 600,
-		"nivel_max_contactos": "Profesional",
-		"capacidad_equipo": 10,
-		"capacidad_publico": 150 # Teatro mediano
-	},
-	"teatro_propio": {
-		"nombre": "Teatro Adquirido",
-		"renta_mensual": 2000,
-		"nivel_max_contactos": "Profesional",
-		"capacidad_equipo": 50,
-		"capacidad_publico": 500 # El gran sueño
-	}
+	"cafe_bohemio": {"nombre": "Café Bohemio", "renta_mensual": 100, "precio_compra": 1500, "tier": 1, "nivel_max_contactos": "Indie", "capacidad_equipo": 4, "capacidad_publico": 30, "especialidad": "intimo"},
+	"foro_underground": {"nombre": "Foro Alternativo (Underground)", "renta_mensual": 350, "precio_compra": 5250, "tier": 2, "nivel_max_contactos": "Indie", "capacidad_equipo": 7, "capacidad_publico": 80, "especialidad": "experimental"},
+	"teatro_camara": {"nombre": "Teatro de Cámara Clásico", "renta_mensual": 1000, "precio_compra": 15000, "tier": 3, "nivel_max_contactos": "Profesional", "capacidad_equipo": 15, "capacidad_publico": 250, "especialidad": "texto"},
+	"gran_auditorio": {"nombre": "Gran Auditorio de la Ciudad", "renta_mensual": 4000, "precio_compra": 60000, "tier": 4, "nivel_max_contactos": "Profesional", "capacidad_equipo": 45, "capacidad_publico": 1000, "especialidad": "mega"}
 }
 # ==========================================
 # 🎭 FORMATOS DE PRODUCCIÓN PROPIA (NUEVO)
 # ==========================================
 var formatos_produccion = {
-	"monologo_indie": {
-		"titulo": "Monólogo Independiente",
-		"descripcion": "Tú pagas todo. Te quedas el 100% de la taquilla.",
-		"costo_montaje": 300,
-		"rol_necesario": "Director",
-		"porcentaje_ganancia": 1.0, # 100%
-		"corte_boleto": 15,
-		"dias_de_trabajo": 3,
-		"espacio_minimo": 2, # Capacidad del local
-		"dificultad": 2,
-		"importancia": 2
-	},
-	"obra_patrocinada": {
-		"titulo": "Obra Patrocinada",
-		"descripcion": "Un Productor paga el montaje, pero te quita el 70% de taquilla.",
-		"costo_montaje": 0,
-		"rol_necesario": "Productor",
-		"porcentaje_ganancia": 0.3, # Solo te quedas el 30%
-		"corte_boleto": 25,
-		"dias_de_trabajo": 4,
-		"espacio_minimo": 4, # Requiere al menos la Bodega Indie
-		"dificultad": 3,
-		"importancia": 3
-	}
+	"monologo_bolsillo": {"titulo": "Monólogo de Bolsillo", "descripcion": "Formato pequeño para testear material.", "costo_montaje": 200, "corte_boleto": 12, "dias_de_trabajo": 2, "aforo_minimo": 15, "dificultad": 1.7, "importancia": 1, "requiere_taquilla": true, "formato_tipo": "intimo"},
+	"obra_reparto": {"titulo": "Obra de Reparto", "descripcion": "Montaje estándar con elenco completo.", "costo_montaje": 800, "corte_boleto": 20, "dias_de_trabajo": 4, "aforo_minimo": 50, "dificultad": 2.8, "importancia": 2, "requiere_taquilla": true, "formato_tipo": "experimental"},
+	"musical_gran_formato": {"titulo": "Musical / Gran Formato", "descripcion": "Gran producción de alto riesgo y alta recompensa.", "costo_montaje": 3000, "corte_boleto": 35, "dias_de_trabajo": 6, "aforo_minimo": 200, "dificultad": 4.2, "importancia": 3, "requiere_taquilla": true, "formato_tipo": "mega"},
+	"cortometraje_indie": {"titulo": "Cortometraje Indie", "descripcion": "Proyecto para festivales y prestigio, sin taquilla directa.", "costo_montaje": 1500, "corte_boleto": 0, "dias_de_trabajo": 3, "aforo_minimo": 0, "dificultad": 3.2, "importancia": 3, "requiere_taquilla": false, "formato_tipo": "experimental"}
 }
 var estado_actual = "normal" # Puede ser: normal, inspirado, torpe, viral, resaca
 var hitos_redes = {
@@ -714,6 +693,10 @@ func reiniciar_datos():
 	# Respetamos tus variables agregadas (reputacion, deuda, fase_dia)
 	mazo_jugador = [] # El olvido total al reiniciar
 	mazo_disponible = mazo_jugador.duplicate()
+	cartas_instancia.clear()
+	ultimo_id_carta_instancia = 0
+	agentes_slots = ["", "", ""]
+	agentes_poseidos.clear()
 	economia = {"dinero": 250, "deuda_bancaria": 0}
 	stats_actor = {"energia_actual": 3, "energia_maxima": 3, "reputacion": 0, "seguidores": 1, "contactos": 0, "estres": 0, "ego": 0}
 	perfil_actor = {
@@ -724,7 +707,8 @@ func reiniciar_datos():
 	"instinto": 0    
 }
 	tiempo = {"dia": 1, "fase_dia": "Mañana"}
-	mi_compania = {"fundada": false, "nombre": "Sin Nombre", "id_espacio_actual": "sala_casa"}
+	mi_compania = {"fundada": false, "nombre": "Sin Nombre", "id_espacio_actual": "sala_casa", "espacios_propios": [],
+	"mejoras_locales": {}}
 	habilidades_actor = {
 		"nivel_general": 1, "xp_actual": 0, "xp_requerida": 100, "puntos_habilidad": 0,
 		"tecnica_vocal": 1, "expresion_corporal": 1, "carisma": 1, "memoria": 1
@@ -751,6 +735,109 @@ func reiniciar_datos():
 func _ready():
 	randomize()
 	normalizar_catalogo_cartas()
+	_actualizar_mazos_a_instancias()
+
+func crear_instancia_carta(id_base: String) -> String:
+	if not catalogo_cartas.has(id_base):
+		return ""
+	ultimo_id_carta_instancia += 1
+	var id_instancia = "ci_" + str(ultimo_id_carta_instancia)
+	cartas_instancia[id_instancia] = {
+		"id_base": id_base,
+		"nivel": 1,
+		"xp_actual": 0,
+		"xp_requerida": 100
+	}
+	return id_instancia
+
+func obtener_id_base_carta(id_carta) -> String:
+	if typeof(id_carta) != TYPE_STRING:
+		return ""
+	var id_txt = str(id_carta)
+	if cartas_instancia.has(id_txt):
+		return str(cartas_instancia[id_txt].get("id_base", ""))
+	return id_txt
+
+func obtener_info_carta(id_carta) -> Dictionary:
+	var id_base = obtener_id_base_carta(id_carta)
+	if not catalogo_cartas.has(id_base):
+		return {}
+	return catalogo_cartas[id_base]
+
+func obtener_nivel_carta(id_carta) -> int:
+	if cartas_instancia.has(id_carta):
+		return int(cartas_instancia[id_carta].get("nivel", 1))
+	return 1
+
+func obtener_poder_carta(id_carta) -> int:
+	var info = obtener_info_carta(id_carta)
+	if info.is_empty():
+		return 0
+	var poder_base = int(info.get("poder", 0))
+	var nivel = obtener_nivel_carta(id_carta)
+	return poder_base + max(0, nivel - 1)
+
+func otorgar_xp_carta(id_carta, xp_ganada: int):
+	if xp_ganada <= 0:
+		return
+	if not cartas_instancia.has(id_carta):
+		return
+	var data = cartas_instancia[id_carta]
+	if int(data.get("nivel", 1)) >= NIVEL_MAX_CARTA:
+		data["xp_actual"] = 0
+		cartas_instancia[id_carta] = data
+		return
+	data["xp_actual"] = int(data.get("xp_actual", 0)) + xp_ganada
+	while int(data.get("nivel", 1)) < NIVEL_MAX_CARTA and int(data.get("xp_actual", 0)) >= int(data.get("xp_requerida", 100)):
+		data["xp_actual"] -= int(data.get("xp_requerida", 100))
+		data["nivel"] = int(data.get("nivel", 1)) + 1
+		data["xp_requerida"] = 100 + ((int(data.get("nivel", 1)) - 1) * 40)
+	if int(data.get("nivel", 1)) >= NIVEL_MAX_CARTA:
+		data["nivel"] = NIVEL_MAX_CARTA
+		data["xp_actual"] = 0
+	data["xp_requerida"] = 100 + ((int(data.get("nivel", 1)) - 1) * 40)
+	cartas_instancia[id_carta] = data
+
+func contar_cartas_por_base(id_base: String) -> int:
+	var c = 0
+	for id_inst in mazo_jugador:
+		if obtener_id_base_carta(id_inst) == id_base:
+			c += 1
+	return c
+
+func obtener_instancias_por_base(id_base: String, solo_disponibles := false) -> Array:
+	var salida = []
+	var fuente = mazo_jugador
+	if solo_disponibles:
+		fuente = mazo_disponible
+	for id_inst in fuente:
+		if obtener_id_base_carta(id_inst) == id_base:
+			salida.append(id_inst)
+	return salida
+
+func _actualizar_mazos_a_instancias():
+	if mazo_jugador.is_empty():
+		return
+	var requiere_migracion = false
+	for id_c in mazo_jugador:
+		if not str(id_c).begins_with("ci_"):
+			requiere_migracion = true
+			break
+	if not requiere_migracion:
+		return
+	var nuevo_mazo = []
+	var nuevo_disponible = []
+	for id_base in mazo_jugador:
+		var inst = crear_instancia_carta(str(id_base))
+		if inst != "":
+			nuevo_mazo.append(inst)
+	for id_base in mazo_disponible:
+		for id_inst in nuevo_mazo:
+			if not nuevo_disponible.has(id_inst) and obtener_id_base_carta(id_inst) == str(id_base):
+				nuevo_disponible.append(id_inst)
+				break
+	mazo_jugador = nuevo_mazo
+	mazo_disponible = nuevo_disponible
 
 var nombres_npc = ["Juan", "María", "Carlos", "Ana", "Luis", "Elena", "Pedro", "Sofía", "Diego", "Laura", "Mónica", "Raúl"]
 var apellidos_npc = ["Pérez", "Gómez", "López", "Díaz", "Martínez", "García", "Ruiz", "Hernández"]
@@ -802,10 +889,17 @@ func guardar_partida():
 		"tiempo": tiempo,
 		"mazo_jugador": mazo_jugador,
 		"mazo_disponible": mazo_disponible,
+		"cartas_instancia": cartas_instancia,
+		"ultimo_id_carta_instancia": ultimo_id_carta_instancia,
+		"agentes_slots": agentes_slots,
+		"agentes_poseidos": agentes_poseidos,
 		"proyectos_activos": proyectos_activos,
 		"agenda": agenda,
 		"mercado_hoy": mercado_hoy, # <--- AÑADE ESTO AQUÍ
-		"temporada_actual": temporada_actual
+		"temporada_actual": temporada_actual,
+		"mi_compania": mi_compania,
+		"lista_contactos": lista_contactos,
+		"historial_proyectos": historial_proyectos
 	}
 	
 	# Abrimos el archivo en modo ESCRITURA y guardamos en formato JSON
@@ -818,51 +912,61 @@ func guardar_partida():
 
 func cargar_partida() -> bool:
 	# Verificamos si existe un archivo de guardado previo
-	
 	if not FileAccess.file_exists(RUTA_GUARDADO):
 		print("No se encontró archivo de guardado.")
 		return false
-		
-	# Abrimos en modo LECTURA
+	
 	var archivo = FileAccess.open(RUTA_GUARDADO, FileAccess.READ)
 	if archivo:
 		var json_string = archivo.get_as_text()
 		archivo.close()
 		
-		# Convertimos el texto JSON de vuelta a variables de Godot
 		var json = JSON.new()
 		var error = json.parse(json_string)
-		
 		if error == OK:
 			var datos_cargados = json.data
 			
-			# 1. Variables Complejas (Listas y Textos)
+			# 1. Variables complejas
 			mazo_jugador = datos_cargados.get("mazo_jugador", mazo_jugador)
 			mazo_disponible = datos_cargados.get("mazo_disponible", mazo_disponible)
+			cartas_instancia = datos_cargados.get("cartas_instancia", cartas_instancia)
+			ultimo_id_carta_instancia = int(datos_cargados.get("ultimo_id_carta_instancia", ultimo_id_carta_instancia))
+			agentes_slots = datos_cargados.get("agentes_slots", agentes_slots)
+			agentes_poseidos = datos_cargados.get("agentes_poseidos", agentes_poseidos)
 			proyectos_activos = datos_cargados.get("proyectos_activos", proyectos_activos)
-			# Reconstruir la agenda forzando que los días sean Números (int)
+			mi_compania = datos_cargados.get("mi_compania", mi_compania)
+			if not mi_compania.has("espacios_propios"):
+				mi_compania["espacios_propios"] = []
+				if not mi_compania.has("mejoras_locales"):
+					mi_compania["mejoras_locales"] = {}
+			lista_contactos = datos_cargados.get("lista_contactos", lista_contactos)
+			historial_proyectos = datos_cargados.get("historial_proyectos", historial_proyectos)
+			
 			if datos_cargados.has("agenda"):
 				agenda.clear()
 				for llave in datos_cargados["agenda"].keys():
 					agenda[int(llave)] = datos_cargados["agenda"][llave]
 			
-			# 2. Diccionarios de Números (Forzamos a que sean Enteros)
+			# 2. Diccionarios numéricos
 			if datos_cargados.has("economia"):
-				for llave in datos_cargados["economia"]: economia[llave] = int(datos_cargados["economia"][llave])
-				
+				for llave in datos_cargados["economia"]:
+					economia[llave] = int(datos_cargados["economia"][llave])
 			if datos_cargados.has("stats_actor"):
-				for llave in datos_cargados["stats_actor"]: stats_actor[llave] = int(datos_cargados["stats_actor"][llave])
-				
+				for llave in datos_cargados["stats_actor"]:
+					stats_actor[llave] = int(datos_cargados["stats_actor"][llave])
 			if datos_cargados.has("habilidades_actor"):
-				for llave in datos_cargados["habilidades_actor"]: habilidades_actor[llave] = int(datos_cargados["habilidades_actor"][llave])
-				
+				for llave in datos_cargados["habilidades_actor"]:
+					habilidades_actor[llave] = int(datos_cargados["habilidades_actor"][llave])
 			if datos_cargados.has("perfil_actor"):
-				for llave in datos_cargados["perfil_actor"]: perfil_actor[llave] = int(datos_cargados["perfil_actor"][llave])
-				
+				for llave in datos_cargados["perfil_actor"]:
+					perfil_actor[llave] = int(datos_cargados["perfil_actor"][llave])
 			if datos_cargados.has("tiempo"):
-				for llave in datos_cargados["tiempo"]: tiempo[llave] = int(datos_cargados["tiempo"][llave])
+				for llave in datos_cargados["tiempo"]:
+					tiempo[llave] = int(datos_cargados["tiempo"][llave])
+			
 			mercado_hoy = datos_cargados.get("mercado_hoy", mercado_hoy)
 			temporada_actual = datos_cargados.get("temporada_actual", temporada_actual)
+			_actualizar_mazos_a_instancias()
 			print("📂 Partida cargada con éxito. (Números corregidos)")
 			return true
 	
