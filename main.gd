@@ -1013,6 +1013,13 @@ func resolver_rutina_general(fue_exito):
 		Datos.economia["dinero"] += ganancia_final
 		sumar_seguidores(seg_final)
 		Datos.habilidades_actor["xp_actual"] += xp_final
+		if bool(c.get("es_propia", false)):
+			Datos.mi_compania["producciones_realizadas"] = int(Datos.mi_compania.get("producciones_realizadas", 0)) + 1
+			var delta_prestigio = int(8 + int(metrica.get("score", 0)) / 8)
+			if estrellas <= 2:
+				delta_prestigio = -int(6 + int(metrica.get("penalidad_fallo", 0)) / 10)
+			Datos.mi_compania["prestigio"] = max(0, int(Datos.mi_compania.get("prestigio", 0)) + delta_prestigio)
+			_actualizar_tier_compania()
 
 		var registro_book = {
 			"titulo": nombre_proyecto,
@@ -2061,6 +2068,37 @@ func _puntuar_funcion(c: Dictionary, fue_exito: bool) -> Dictionary:
 		"penalidad_fallo": int(max(0, 90 - score_int))
 	}
 
+func _requisitos_fundar_compania() -> Dictionary:
+	var out = {"ok": true, "faltantes": []}
+	if str(Datos.mi_compania.get("id_espacio_actual", "sala_casa")) == "sala_casa":
+		out["ok"] = false
+		out["faltantes"].append("Operar fuera de casa (rentar/comprar local).")
+	if int(Datos.stats_actor.get("seguidores", 0)) < 120:
+		out["ok"] = false
+		out["faltantes"].append("120 seguidores mínimos.")
+	if int(Datos.habilidades_actor.get("nivel_general", 1)) < 4:
+		out["ok"] = false
+		out["faltantes"].append("Nivel general 4.")
+	if _buscar_mejor_contacto_activo_por_rol("Director") == null or _buscar_mejor_contacto_activo_por_rol("Guionista") == null:
+		out["ok"] = false
+		out["faltantes"].append("Tener Director + Guionista equipados.")
+	if int(Datos.economia.get("dinero", 0)) < 300:
+		out["ok"] = false
+		out["faltantes"].append("$300 para trámites y arranque.")
+	return out
+
+func _actualizar_tier_compania():
+	var prestigio = int(Datos.mi_compania.get("prestigio", 0))
+	var prods = int(Datos.mi_compania.get("producciones_realizadas", 0))
+	var tier = 0
+	if Datos.mi_compania.get("fundada", false):
+		tier = 1
+	if prestigio >= 120 and prods >= 2:
+		tier = 2
+	if prestigio >= 280 and prods >= 5:
+		tier = 3
+	Datos.mi_compania["tier_empresa"] = tier
+
 func _actualizar_afinidad_contactos_fin_dia():
 	for i in range(Datos.lista_contactos.size()):
 		var c = Datos.lista_contactos[i]
@@ -2113,6 +2151,39 @@ func _buscar_casting_oculto() -> Dictionary:
 
 func _espacio_es_propietario(id_espacio: String) -> bool:
 	return Datos.mi_compania.has("espacios_propios") and Datos.mi_compania["espacios_propios"].has(id_espacio)
+
+func _formato_ideal_para_espacio(esp: Dictionary) -> String:
+	var esp_tipo = str(esp.get("especialidad", "ninguna"))
+	if esp_tipo == "intimo":
+		return "Monólogo de Bolsillo"
+	if esp_tipo == "experimental":
+		return "Obra de Reparto o Cortometraje Indie"
+	if esp_tipo == "texto":
+		return "Obra de Reparto"
+	if esp_tipo == "mega":
+		return "Musical / Gran Formato"
+	return "Ensayos y formatos pequeños"
+
+func _resumen_espacio_detallado(id_espacio: String) -> String:
+	var esp = Datos.espacios_disponibles.get(id_espacio, {})
+	if esp.is_empty():
+		return "Sin datos de espacio."
+	var tier = int(esp.get("tier", 0))
+	var txt = "🏢 " + str(esp.get("nombre", id_espacio)) + "\n"
+	txt += "Tier: " + str(tier) + " | Especialidad: " + str(esp.get("especialidad", "ninguna")) + "\n"
+	txt += "Aforo: " + str(esp.get("capacidad_publico", 0)) + " | Equipo: " + str(esp.get("capacidad_equipo", 0)) + "\n"
+	txt += "Ideal para: " + _formato_ideal_para_espacio(esp) + "\n"
+	txt += "No ideal para: "
+	if str(esp.get("especialidad", "")) == "mega":
+		txt += "Monólogos íntimos (coste innecesario)"
+	elif str(esp.get("especialidad", "")) == "intimo":
+		txt += "Grandes formatos de taquilla"
+	else:
+		txt += "Formatos opuestos a su especialidad"
+	if _espacio_es_propietario(id_espacio):
+		var mejoras = Datos.mi_compania.get("mejoras_locales", {}).get(id_espacio, {})
+		txt += "\nMejoras activas: " + str(mejoras.keys())
+	return txt
 
 func _ingreso_subarriendo_diario(id_espacio: String) -> int:
 	var esp = Datos.espacios_disponibles.get(id_espacio, {})
@@ -2586,11 +2657,9 @@ func actualizar_lista_espacios():
 		
 		if id_espacio == espacio_actual:
 			btn.text += "\n[ ESPACIO ACTUAL ]"
-			btn.disabled = true
 			btn.modulate = Color(0.5, 1.0, 0.5) # Verde para saber que es tuyo
-		else:
-			# Se usa .bind() para pasarle qué espacio queremos rentar al hacer clic
-			btn.pressed.connect(mostrar_menu_espacio.bind(id_espacio))
+		# Se usa .bind() para pasarle qué espacio queremos gestionar al hacer clic
+		btn.pressed.connect(mostrar_menu_espacio.bind(id_espacio))
 			
 		contenedor_lista_espacios.add_child(btn)
 
@@ -2599,7 +2668,7 @@ func mostrar_menu_espacio(id_espacio):
 		popup_menu_espacio.queue_free()
 	popup_menu_espacio = AcceptDialog.new()
 	popup_menu_espacio.title = "Gestión de Espacio"
-	popup_menu_espacio.dialog_text = "Elige acción para: " + str(Datos.espacios_disponibles[id_espacio].get("nombre", id_espacio))
+	popup_menu_espacio.dialog_text = _resumen_espacio_detallado(id_espacio) + "\n\nElige una acción:"
 	popup_menu_espacio.get_ok_button().visible = false
 	add_child(popup_menu_espacio)
 	var vb = VBoxContainer.new()
@@ -2609,6 +2678,8 @@ func mostrar_menu_espacio(id_espacio):
 	if _espacio_es_propietario(id_espacio):
 		var b_u = Button.new(); b_u.text = "Usar como local actual"; b_u.pressed.connect(func(): _accion_espacio(id_espacio, "usar")); vb.add_child(b_u)
 		var b_m = Button.new(); b_m.text = "Mejoras"; b_m.pressed.connect(func(): _mostrar_mejoras_local(id_espacio)); vb.add_child(b_m)
+	if id_espacio == str(Datos.mi_compania.get("id_espacio_actual", "sala_casa")) and _espacio_es_propietario(id_espacio):
+		var b_s = Button.new(); b_s.text = "Ver diagnóstico del local"; b_s.pressed.connect(func(): mostrar_alerta("📊 Estado del Espacio", _resumen_espacio_detallado(id_espacio))); vb.add_child(b_s)
 	var b_x = Button.new(); b_x.text = "Cancelar"; b_x.pressed.connect(func(): popup_menu_espacio.hide()); vb.add_child(b_x)
 	popup_menu_espacio.popup_centered(Vector2i(520, 320))
 
@@ -2665,12 +2736,37 @@ func _mostrar_mejoras_local(id_espacio: String):
 func _on_btn_app_productora_pressed():
 	contenedor_menu_inicio.visible = false
 	panel_app_productora.visible = true
+	_actualizar_tier_compania()
 	input_nombre_compania.text = Datos.mi_compania["nombre"]
 	input_nombre_compania.editable = not Datos.mi_compania["fundada"]
 	for hijo in contenedor_lista_productora.get_children():
 		hijo.queue_free()
+	var lbl_estado = Label.new()
+	if not bool(Datos.mi_compania.get("fundada", false)):
+		var req = _requisitos_fundar_compania()
+		lbl_estado.text = "🏢 Fundación de Compañía\n"
+		lbl_estado.text += "Debes cumplir requisitos para producir tus propios proyectos."
+		if not bool(req.get("ok", false)):
+			lbl_estado.text += "\nFaltantes:"
+			for f in req.get("faltantes", []):
+				lbl_estado.text += "\n• " + str(f)
+		else:
+			lbl_estado.text += "\n✅ Ya puedes registrar la compañía con el botón de nombre."
+	else:
+		lbl_estado.text = "🏢 " + str(Datos.mi_compania.get("nombre", "Compañía")) + " | Tier " + str(Datos.mi_compania.get("tier_empresa", 1))
+		lbl_estado.text += "\nPrestigio: " + str(Datos.mi_compania.get("prestigio", 0)) + " | Producciones: " + str(Datos.mi_compania.get("producciones_realizadas", 0))
+	lbl_estado.autowrap_mode = TextServer.AUTOWRAP_WORD
+	contenedor_lista_productora.add_child(lbl_estado)
+
+	if not bool(Datos.mi_compania.get("fundada", false)):
+		var aviso = Label.new()
+		aviso.text = "🔒 Registra tu compañía para desbloquear formatos de producción propia."
+		aviso.autowrap_mode = TextServer.AUTOWRAP_WORD
+		contenedor_lista_productora.add_child(aviso)
+		return
 
 	var espacio_actual = Datos.espacios_disponibles[Datos.mi_compania["id_espacio_actual"]]
+	var tier_empresa = int(Datos.mi_compania.get("tier_empresa", 1))
 	for id_formato in Datos.formatos_produccion.keys():
 		var formato = Datos.formatos_produccion[id_formato]
 		var btn = Button.new()
@@ -2678,11 +2774,18 @@ func _on_btn_app_productora_pressed():
 		var guionista = _buscar_mejor_contacto_activo_por_rol("Guionista")
 		var productor = _buscar_mejor_contacto_activo_por_rol("Productor")
 		var aforo_ok = int(espacio_actual.get("capacidad_publico", 0)) >= int(formato.get("aforo_minimo", 0))
+		var tier_minimo = 1
+		if id_formato == "obra_reparto": tier_minimo = 1
+		elif id_formato == "cortometraje_indie": tier_minimo = 2
+		elif id_formato == "musical_gran_formato": tier_minimo = 3
 		var txt = "🎬 " + str(formato["titulo"]) + "\n"
 		txt += "Costo: $" + str(formato["costo_montaje"]) + " | Aforo mínimo: " + str(formato.get("aforo_minimo", 0)) + "\n"
-		txt += "Director + Guionista obligatorios."
+		txt += "Director + Guionista obligatorios. | Tier compañía requerido: " + str(tier_minimo)
 		if director == null or guionista == null:
 			txt += "\n❌ Debes equipar Director y Guionista."
+			btn.disabled = true
+		elif tier_empresa < tier_minimo:
+			txt += "\n🔒 Sube tier de tu compañía (prestigio y producciones)."
 			btn.disabled = true
 		elif not aforo_ok and bool(formato.get("requiere_taquilla", true)):
 			txt += "\n❌ Incapacidad de Foro: tu espacio no cumple aforo."
@@ -2707,7 +2810,17 @@ func _on_btn_volver_inicio_productora_pressed():
 	contenedor_menu_inicio.visible = true
 
 func lanzar_produccion_propia(id_formato, director, guionista, productor):
+	if not bool(Datos.mi_compania.get("fundada", false)):
+		mostrar_alerta("Compañía no registrada", "Primero registra tu compañía para poder montar producciones propias.")
+		return
 	var formato = Datos.formatos_produccion[id_formato]
+	var tier_empresa = int(Datos.mi_compania.get("tier_empresa", 1))
+	var tier_minimo = 1
+	if id_formato == "cortometraje_indie": tier_minimo = 2
+	elif id_formato == "musical_gran_formato": tier_minimo = 3
+	if tier_empresa < tier_minimo:
+		mostrar_alerta("Tier insuficiente", "Necesitas Tier " + str(tier_minimo) + " de compañía para este formato.")
+		return
 	var trato = _trato_productor(productor)
 	var aporte = int(float(formato["costo_montaje"]) * float(trato.get("aporte", 0.0)))
 	var costo_jugador = int(formato["costo_montaje"]) - aporte
@@ -3008,25 +3121,27 @@ func _on_btn_renombrar_compania_pressed():
 	if Datos.mi_compania["fundada"]:
 		mostrar_alerta("Trámite Finalizado", "Tu compañía ya está registrada en actas. No puedes cambiar el nombre otra vez.")
 		return
-		
-	if Datos.mi_compania["id_espacio_actual"] == "sala_casa":
-		mostrar_alerta("Sin Domicilio Fiscal", "No puedes registrar una empresa en la sala de tu casa. Ve a la App 'Espacios' y renta un local primero.")
-		return
-		
-	if Datos.economia["dinero"] < 100:
-		mostrar_alerta("Sin Fondos", "El trámite notarial cuesta $100 dólares. Ahorra un poco más.")
+
+	var req = _requisitos_fundar_compania()
+	if not bool(req.get("ok", false)):
+		var txt = "Aún no cumples requisitos para fundar la compañía:\n"
+		for f in req.get("faltantes", []):
+			txt += "• " + str(f) + "\n"
+		mostrar_alerta("Fundación bloqueada", txt)
 		return
 		
 	var nuevo_nombre = input_nombre_compania.text.strip_edges()
 	if nuevo_nombre == "":
 		mostrar_alerta("Nombre Inválido", "El nombre no puede estar vacío.")
 	else:
-		Datos.economia["dinero"] -= 100
+		Datos.economia["dinero"] -= 300
 		Datos.mi_compania["nombre"] = nuevo_nombre
 		Datos.mi_compania["fundada"] = true # <--- ¡SE SELLA PARA SIEMPRE!
+		Datos.mi_compania["prestigio"] = max(10, int(Datos.mi_compania.get("prestigio", 0)))
+		_actualizar_tier_compania()
 		input_nombre_compania.editable = false # Bloquea la edición visual
 		
-		mostrar_alerta("Trámite Legal Listo", "Pagaste -$100 al notario.\nTu compañía ahora está registrada legalmente como:\n\n" + nuevo_nombre)
+		mostrar_alerta("Trámite Legal Listo", "Pagaste -$300 en constitución legal y operación inicial.\nTu compañía ahora está registrada como:\n\n" + nuevo_nombre)
 		publicar_auto("¡Gente! Oficialmente he fundado y registrado mi propia compañía. Sigan a " + nuevo_nombre + " para próximos proyectos. 🥂🎬")
 		actualizar_interfaz()
 # ==========================================
@@ -3207,6 +3322,32 @@ func _on_btn_volver_inicio_mazo_pressed():
 	panel_app_mazo.visible = false
 	contenedor_menu_inicio.visible = true
 
+func _requisito_fusion(rareza: String) -> Dictionary:
+	if rareza == "Legendaria":
+		return {"min_nivel": 6, "suma": 16, "desc": "cada ingrediente nivel 6+ y suma total 16+"}
+	if rareza == "Épica":
+		return {"min_nivel": 4, "suma": 12, "desc": "cada ingrediente nivel 4+ y suma total 12+"}
+	return {"min_nivel": 1, "suma": 2, "desc": "progreso básico"}
+
+func _cumple_requisito_fusion(ing1: String, ing2: String, req: Dictionary) -> bool:
+	var min_nivel = int(req.get("min_nivel", 1))
+	var suma_min = int(req.get("suma", 2))
+	var best1 = 0
+	var best2 = 0
+	if ing1 == ing2:
+		var niveles = []
+		for id_i in Datos.obtener_instancias_por_base(ing1, false):
+			niveles.append(Datos.obtener_nivel_carta(id_i))
+		niveles.sort()
+		if niveles.size() < 2:
+			return false
+		best1 = int(niveles[niveles.size() - 1])
+		best2 = int(niveles[niveles.size() - 2])
+	else:
+		for id_i in Datos.obtener_instancias_por_base(ing1, false): best1 = max(best1, Datos.obtener_nivel_carta(id_i))
+		for id_i in Datos.obtener_instancias_por_base(ing2, false): best2 = max(best2, Datos.obtener_nivel_carta(id_i))
+	return best1 >= min_nivel and best2 >= min_nivel and (best1 + best2) >= suma_min
+
 
 
 
@@ -3245,31 +3386,18 @@ func _on_btn_fusionar_cartas_pressed():
 			var btn_receta = Button.new()
 			var n1 = Datos.catalogo_cartas[ing1]["nombre"]
 			var n2 = Datos.catalogo_cartas[ing2]["nombre"]
-			var requiere_max = (rareza == "Épica" or rareza == "Legendaria")
-			var max_ok = true
-			if requiere_max:
-				var l1 = 0
-				for id_i in Datos.obtener_instancias_por_base(ing1, false): l1 = max(l1, Datos.obtener_nivel_carta(id_i))
-				var l2 = 0
-				for id_i in Datos.obtener_instancias_por_base(ing2, false): l2 = max(l2, Datos.obtener_nivel_carta(id_i))
-				if ing1 == ing2:
-					var niveles = []
-					for id_i in Datos.obtener_instancias_por_base(ing1, false): niveles.append(Datos.obtener_nivel_carta(id_i))
-					niveles.sort()
-					if niveles.size() < 2 or niveles[niveles.size()-1] < 10 or niveles[niveles.size()-2] < 10:
-						max_ok = false
-				else:
-					max_ok = (l1 >= 10 and l2 >= 10)
+			var req = _requisito_fusion(rareza)
+			var max_ok = _cumple_requisito_fusion(ing1, ing2, req)
 			
 			btn_receta.text = "Crear: " + info_resultado["nombre"] + " (" + rareza + ")\n" + n1 + " + " + n2 + "\nHonorarios: $" + str(costo)
-			if requiere_max and not max_ok:
-				btn_receta.text += "\n🔒 Requiere Nivel 10 en ambas cartas"
+			if not max_ok:
+				btn_receta.text += "\n🔒 Requisito: " + str(req.get("desc", "progreso insuficiente"))
 				btn_receta.disabled = true
 				btn_receta.modulate = Color(0.5, 0.5, 0.5)
 			btn_receta.custom_minimum_size = Vector2(0, 90)
 			
 			# Conectamos el botón para que ejecute la fusión al darle clic
-			if not (requiere_max and not max_ok):
+			if max_ok:
 				btn_receta.pressed.connect(ejecutar_fusion_coach.bind(id_resultado, ing1, ing2, costo, info_resultado["nombre"]))
 			cont_lista_coach.add_child(btn_receta)
 			
@@ -3287,22 +3415,10 @@ func ejecutar_fusion_coach(id_resultado, ing1, ing2, costo, nombre_resultado):
 		
 	# Cobrar y fusionar
 	var rareza_obj = Datos.catalogo_cartas.get(id_resultado, {}).get("rareza", "Común")
-	if rareza_obj == "Épica" or rareza_obj == "Legendaria":
-		var lvl_ok = false
-		if ing1 == ing2:
-			var niveles = []
-			for id_i in Datos.obtener_instancias_por_base(ing1, false): niveles.append(Datos.obtener_nivel_carta(id_i))
-			niveles.sort()
-			lvl_ok = niveles.size() >= 2 and niveles[niveles.size()-1] >= 10 and niveles[niveles.size()-2] >= 10
-		else:
-			var l1 = 0
-			for id_i in Datos.obtener_instancias_por_base(ing1, false): l1 = max(l1, Datos.obtener_nivel_carta(id_i))
-			var l2 = 0
-			for id_i in Datos.obtener_instancias_por_base(ing2, false): l2 = max(l2, Datos.obtener_nivel_carta(id_i))
-			lvl_ok = l1 >= 10 and l2 >= 10
-		if not lvl_ok:
-			mostrar_alerta("Coach exigente", "Para crear cartas " + rareza_obj + " necesitas Nivel 10 en ambas cartas ingrediente.")
-			return
+	var req = _requisito_fusion(rareza_obj)
+	if not _cumple_requisito_fusion(ing1, ing2, req):
+		mostrar_alerta("Coach exigente", "Para crear cartas " + rareza_obj + " necesitas: " + str(req.get("desc", "progreso de nivel adicional")) + ".")
+		return
 	Datos.economia["dinero"] -= costo
 	var inst_1 = Datos.obtener_instancias_por_base(ing1, false)
 	var inst_2 = Datos.obtener_instancias_por_base(ing2, false)
@@ -3528,11 +3644,13 @@ func _multiplicador_vs_jefe(arq_jefe: String, arq_carta: String) -> float:
 	elif arq_jefe == "instinto" and arq_carta == "metodo": return 0.5
 	return 1.0
 
-func _texto_efecto_carta(info: Dictionary) -> String:
+func _texto_efecto_carta(info: Dictionary, id_carta := "") -> String:
 	if not info.has("efecto"):
 		return ""
 	var ef = str(info.get("efecto", ""))
-	var val = info.get("valor", 0)
+	var val = float(info.get("valor", 0))
+	if id_carta != "":
+		val = float(Datos.obtener_valor_efecto_carta(id_carta))
 	if ef == "bajar_exigencia": return "🎯 Baja Exigencia " + str(int(val))
 	if ef == "curar_estres": return "💚 Cura Estrés " + str(int(val))
 	if ef == "robar_carta": return "🃏 Roba " + str(int(val))
@@ -3542,6 +3660,7 @@ func _texto_efecto_carta(info: Dictionary) -> String:
 	if ef == "restaurar_mulligan": return "🔄 +" + str(int(val)) + " Redibujos"
 	if ef == "mas_jugadas": return "➕ +" + str(int(val)) + " jugadas"
 	if ef == "sacrificar_energia": return "⚡ -" + str(int(val)) + " Energía"
+	if ef == "impulso_cero": return "✨ Impulso +" + str(int(val))
 	if ef == "basura": return "☠️ Carta de Peligro"
 	return ""
 
@@ -3923,7 +4042,7 @@ func crear_boton_carta_en_mesa(id_c):
 		btn_c.modulate = Color(1.0, 0.85, 0.85)
 	else:
 		linea_efectividad = "➖ Neutral vs jefe"
-	var linea_efecto = _texto_efecto_carta(info)
+	var linea_efecto = _texto_efecto_carta(info, id_c)
 	if info.has("efecto"): linea += " ✨"
 	btn_c.text = info["nombre"] + "\n" + linea + "\n" + info.get("desc", "")
 	if linea_efecto != "": btn_c.text += "\n" + linea_efecto
@@ -4184,7 +4303,8 @@ func crear_panel_admin():
 			if Datos.cartas_instancia.has(id_i):
 				Datos.cartas_instancia[id_i]["nivel"] = Datos.NIVEL_MAX_CARTA
 				Datos.cartas_instancia[id_i]["xp_actual"] = 0
-				Datos.cartas_instancia[id_i]["xp_requerida"] = 100 + ((Datos.NIVEL_MAX_CARTA - 1) * 40)
+				var id_base = str(Datos.cartas_instancia[id_i].get("id_base", ""))
+				Datos.cartas_instancia[id_i]["xp_requerida"] = Datos.calcular_xp_requerida_carta(id_base, Datos.NIVEL_MAX_CARTA)
 		actualizar_interfaz()
 	)
 

@@ -60,7 +60,10 @@ var mi_compania = {
 	"nombre": "Sin Nombre",
 	"id_espacio_actual": "sala_casa",
 	"espacios_propios": [],
-	"mejoras_locales": {}
+	"mejoras_locales": {},
+	"prestigio": 0,
+	"producciones_realizadas": 0,
+	"tier_empresa": 0
 }
 
 # ==========================================
@@ -748,8 +751,16 @@ func reiniciar_datos():
 	"instinto": 0    
 }
 	tiempo = {"dia": 1, "fase_dia": "Mañana"}
-	mi_compania = {"fundada": false, "nombre": "Sin Nombre", "id_espacio_actual": "sala_casa", "espacios_propios": [],
-	"mejoras_locales": {}}
+	mi_compania = {
+		"fundada": false,
+		"nombre": "Sin Nombre",
+		"id_espacio_actual": "sala_casa",
+		"espacios_propios": [],
+		"mejoras_locales": {},
+		"prestigio": 0,
+		"producciones_realizadas": 0,
+		"tier_empresa": 0
+	}
 	habilidades_actor = {
 		"nivel_general": 1, "xp_actual": 0, "xp_requerida": 100, "puntos_habilidad": 0,
 		"tecnica_vocal": 1, "expresion_corporal": 1, "carisma": 1, "memoria": 1
@@ -1010,8 +1021,14 @@ func cargar_partida() -> bool:
 			mi_compania = datos_cargados.get("mi_compania", mi_compania)
 			if not mi_compania.has("espacios_propios"):
 				mi_compania["espacios_propios"] = []
-				if not mi_compania.has("mejoras_locales"):
-					mi_compania["mejoras_locales"] = {}
+			if not mi_compania.has("mejoras_locales"):
+				mi_compania["mejoras_locales"] = {}
+			if not mi_compania.has("prestigio"):
+				mi_compania["prestigio"] = 0
+			if not mi_compania.has("producciones_realizadas"):
+				mi_compania["producciones_realizadas"] = 0
+			if not mi_compania.has("tier_empresa"):
+				mi_compania["tier_empresa"] = 0
 			lista_contactos = datos_cargados.get("lista_contactos", lista_contactos)
 			historial_proyectos = datos_cargados.get("historial_proyectos", historial_proyectos)
 			
