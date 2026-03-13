@@ -60,7 +60,11 @@ var mi_compania = {
 	"nombre": "Sin Nombre",
 	"id_espacio_actual": "sala_casa",
 	"espacios_propios": [],
-	"mejoras_locales": {}
+	"mejoras_locales": {},
+	"prestigio": 0,
+	"producciones_realizadas": 0,
+	"tier_empresa": 0,
+	"rentas_activas": {}
 }
 
 # ==========================================
@@ -284,7 +288,24 @@ const PESO_EFECTO_ECONOMIA = {
 	"sacrificar_energia": -12.0,
 	"doblar_poder_actual": 32.0,
 	"restaurar_mulligan": 15.0,
+	"impulso_cero": 11.0,
 	"basura": -35.0
+}
+
+const ESCALADO_PODER_RAREZA = {
+	"Común": 0.65,
+	"Rara": 0.85,
+	"Épica": 1.1,
+	"Legendaria": 1.35,
+	"Peligro": 0.0
+}
+
+const ESCALADO_XP_RAREZA = {
+	"Común": 1.0,
+	"Rara": 1.12,
+	"Épica": 1.25,
+	"Legendaria": 1.4,
+	"Peligro": 0.85
 }
 
 const META_PODER_RAREZA = {
@@ -298,8 +319,32 @@ const META_PODER_RAREZA = {
 func normalizar_catalogo_cartas():
 	_aplicar_arquetipos_cartas()
 	_balancear_efectos_cartas()
+	_inyectar_utilidad_cartas_cero()
 	#_balancear_poder_cartas()
 	_generar_economia_cartas()
+
+func _inyectar_utilidad_cartas_cero():
+	for id in catalogo_cartas.keys():
+		var carta = catalogo_cartas[id]
+		if str(carta.get("rareza", "Común")) == "Peligro":
+			continue
+		if int(carta.get("poder", 0)) != 0:
+			continue
+		if str(carta.get("efecto", "")) != "":
+			continue
+		var rareza = str(carta.get("rareza", "Común"))
+		var val_base = 2.0
+		if rareza == "Rara":
+			val_base = 3.0
+		elif rareza == "Épica":
+			val_base = 5.0
+		elif rareza == "Legendaria":
+			val_base = 7.0
+		carta["efecto"] = "impulso_cero"
+		carta["valor"] = val_base
+		var desc_actual = str(carta.get("desc", ""))
+		if desc_actual.find("Impulso") == -1:
+			carta["desc"] = (desc_actual + " (Impulso +" + str(int(val_base)) + ")").strip_edges()
 func _aplicar_arquetipos_cartas():
 	for arq in ARQUETIPOS_CARTAS.keys():
 		for id in ARQUETIPOS_CARTAS[arq]:
@@ -707,8 +752,17 @@ func reiniciar_datos():
 	"instinto": 0    
 }
 	tiempo = {"dia": 1, "fase_dia": "Mañana"}
-	mi_compania = {"fundada": false, "nombre": "Sin Nombre", "id_espacio_actual": "sala_casa", "espacios_propios": [],
-	"mejoras_locales": {}}
+	mi_compania = {
+		"fundada": false,
+		"nombre": "Sin Nombre",
+		"id_espacio_actual": "sala_casa",
+		"espacios_propios": [],
+		"mejoras_locales": {},
+		"prestigio": 0,
+		"producciones_realizadas": 0,
+		"tier_empresa": 0,
+		"rentas_activas": {}
+	}
 	habilidades_actor = {
 		"nivel_general": 1, "xp_actual": 0, "xp_requerida": 100, "puntos_habilidad": 0,
 		"tecnica_vocal": 1, "expresion_corporal": 1, "carisma": 1, "memoria": 1
@@ -746,7 +800,7 @@ func crear_instancia_carta(id_base: String) -> String:
 		"id_base": id_base,
 		"nivel": 1,
 		"xp_actual": 0,
-		"xp_requerida": 100
+		"xp_requerida": calcular_xp_requerida_carta(id_base, 1)
 	}
 	return id_instancia
 
@@ -775,7 +829,39 @@ func obtener_poder_carta(id_carta) -> int:
 		return 0
 	var poder_base = int(info.get("poder", 0))
 	var nivel = obtener_nivel_carta(id_carta)
-	return poder_base + max(0, nivel - 1)
+	if poder_base < 0:
+		return poder_base
+	var rareza = str(info.get("rareza", "Común"))
+	var esc = float(ESCALADO_PODER_RAREZA.get(rareza, 0.7))
+	var bonus_nivel = int(floor(max(0, nivel - 1) * esc)) + int(floor(max(0, nivel - 1) / 4.0))
+	return poder_base + bonus_nivel
+
+func obtener_valor_efecto_carta(id_carta) -> float:
+	var info = obtener_info_carta(id_carta)
+	if info.is_empty():
+		return 0.0
+	var ef = str(info.get("efecto", ""))
+	var base = float(info.get("valor", 0.0))
+	if ef == "":
+		return base
+	var nivel = max(1, obtener_nivel_carta(id_carta))
+	var rareza = str(info.get("rareza", "Común"))
+	var t = max(0.0, float(nivel - 1))
+	if ef == "multiplicar_poder":
+		return base + (t * (0.015 + (0.003 * float(ESCALADO_PODER_RAREZA.get(rareza, 0.6)))))
+	if ef == "escalar_carisma":
+		return base + int(floor(t / 3.0))
+	if ef == "robar_carta" or ef == "mas_jugadas" or ef == "restaurar_mulligan":
+		return base + int(floor(t / 6.0))
+	return base + int(floor(t * (0.35 + (0.08 * float(ESCALADO_PODER_RAREZA.get(rareza, 0.6))))))
+
+func calcular_xp_requerida_carta(id_base: String, nivel_actual: int) -> int:
+	var info = catalogo_cartas.get(id_base, {})
+	var rareza = str(info.get("rareza", "Común"))
+	var esc = float(ESCALADO_XP_RAREZA.get(rareza, 1.0))
+	var n = max(1, nivel_actual)
+	var base = 80 + int((n - 1) * 35) + int(pow(max(0, n - 1), 1.22) * 9.0)
+	return int(round(float(base) * esc))
 
 func otorgar_xp_carta(id_carta, xp_ganada: int):
 	if xp_ganada <= 0:
@@ -791,11 +877,11 @@ func otorgar_xp_carta(id_carta, xp_ganada: int):
 	while int(data.get("nivel", 1)) < NIVEL_MAX_CARTA and int(data.get("xp_actual", 0)) >= int(data.get("xp_requerida", 100)):
 		data["xp_actual"] -= int(data.get("xp_requerida", 100))
 		data["nivel"] = int(data.get("nivel", 1)) + 1
-		data["xp_requerida"] = 100 + ((int(data.get("nivel", 1)) - 1) * 40)
+		data["xp_requerida"] = calcular_xp_requerida_carta(str(data.get("id_base", "")), int(data.get("nivel", 1)))
 	if int(data.get("nivel", 1)) >= NIVEL_MAX_CARTA:
 		data["nivel"] = NIVEL_MAX_CARTA
 		data["xp_actual"] = 0
-	data["xp_requerida"] = 100 + ((int(data.get("nivel", 1)) - 1) * 40)
+	data["xp_requerida"] = calcular_xp_requerida_carta(str(data.get("id_base", "")), int(data.get("nivel", 1)))
 	cartas_instancia[id_carta] = data
 
 func contar_cartas_por_base(id_base: String) -> int:
@@ -937,8 +1023,16 @@ func cargar_partida() -> bool:
 			mi_compania = datos_cargados.get("mi_compania", mi_compania)
 			if not mi_compania.has("espacios_propios"):
 				mi_compania["espacios_propios"] = []
-				if not mi_compania.has("mejoras_locales"):
-					mi_compania["mejoras_locales"] = {}
+			if not mi_compania.has("mejoras_locales"):
+				mi_compania["mejoras_locales"] = {}
+			if not mi_compania.has("prestigio"):
+				mi_compania["prestigio"] = 0
+			if not mi_compania.has("producciones_realizadas"):
+				mi_compania["producciones_realizadas"] = 0
+			if not mi_compania.has("tier_empresa"):
+				mi_compania["tier_empresa"] = 0
+			if not mi_compania.has("rentas_activas"):
+				mi_compania["rentas_activas"] = {}
 			lista_contactos = datos_cargados.get("lista_contactos", lista_contactos)
 			historial_proyectos = datos_cargados.get("historial_proyectos", historial_proyectos)
 			
