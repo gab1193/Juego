@@ -145,6 +145,7 @@ var tecnicas_monologo = [
 	{"nombre": "Aislarse", "costo": 28, "dps": 26.0, "dur": 2.6, "radio": 220.0, "color": Color(0.8, 1.0, 0.6)}
 ]
 var bonus_agentes_ronda = {}
+var estadisticas_funcion = {}
 
 var ha_trabajado_hoy = false
 var ha_publicado_hoy = false
@@ -285,13 +286,14 @@ func actualizar_interfaz():
 	elif arq == "comercial": texto_arq = "Perfil: Comercial (+50% Dinero, Ego x2)"
 	elif arq == "instinto": texto_arq = "Perfil: Instintivo (+2s en Minijuegos, -50% XP)"
 	var agentes_txt = "\n🎲 Agentes: "
-	for i in range(Datos.agentes_slots.size()):
-		var id_ag = str(Datos.agentes_slots[i])
-		if id_ag == "":
-			agentes_txt += "[Slot " + str(i + 1) + ": vacío] "
-		else:
-			var nom = Datos.catalogo_agentes.get(id_ag, {}).get("nombre", id_ag)
-			agentes_txt += "[" + str(i + 1) + ": " + str(nom) + "] "
+	var equipados = _contactos_activos_ordenados()
+	for i in range(3):
+		if i >= equipados.size():
+			agentes_txt += "[Contacto " + str(i + 1) + ": vacío] "
+			continue
+		var c = equipados[i]
+		var bonus_txt = _resumen_bonus_contacto(c)
+		agentes_txt += "[" + str(i + 1) + ": " + str(c.get("nombre", "Contacto")) + " · " + bonus_txt + "] "
 	texto_arq += agentes_txt
 	label_arquetipo.text = texto_arq
 	label_stats.text = "Voz: " + str(Datos.habilidades_actor["tecnica_vocal"]) + "\nCuerpo: " + str(Datos.habilidades_actor["expresion_corporal"]) + "\nCarisma: " + str(Datos.habilidades_actor["carisma"]) + "\nMemoria: " + str(Datos.habilidades_actor["memoria"])
@@ -547,6 +549,8 @@ func iniciar_skill_check(tipo):
 		if _agentes_activos_core().has("sponsor_fisico"):
 			Datos.stats_actor["energia_actual"] = min(Datos.stats_actor["energia_maxima"], Datos.stats_actor["energia_actual"] + 1)
 			escribir_log_batalla("💪 Sponsor Físico: +1 Energía al iniciar combate.")
+		if tipo_rutina == "funcion":
+			_registrar_inicio_funcion(exigencia_director)
 		actualizar_ui_balasim(nombre_jefe)
 		# 1. Repartimos la mano inicial normalmente
 		repartir_mano_balasim(true)
@@ -931,32 +935,17 @@ func resolver_rutina_general(fue_exito):
 	elif tipo_rutina == "funcion":
 		var c = casting_data_actual
 		var nombre_proyecto = c["titulo_unico"].split("\n")[1]
-		var arq_dom = obtener_arquetipo_dominante() 
+		var arq_dom = obtener_arquetipo_dominante()
+		var metrica = _puntuar_funcion(c, fue_exito)
 
-		# Balasim define el éxito de la crítica
-		var estrellas = 1
+		var estrellas = int(metrica.get("estrellas", 1))
 		if fue_exito:
 			c["rendimiento_acumulado"] += 2
-			
-			# ¡NUEVO: RECOMPENSA VARIABLE SEGÚN DESEMPEÑO EN COMBATE!
-			var porcentaje_victoria = float(poder_total_encuentro) / float(exigencia_director)
-			
-			if porcentaje_victoria >= 1.5: 
-				estrellas = 5 # Arrasaste
-				c["recompensa_xp"] = int(c.get("recompensa_xp", 100) * 1.5)
-			elif porcentaje_victoria >= 1.2: 
-				estrellas = 4 # Muy bien
-			else: 
-				estrellas = 3 # Pasaste por los pelos
-		else:
-			estrellas = randi_range(1, 2)
 
-		# --- SUBIDA DE PUNTOS DE ARQUETIPO (ADN) ---
 		if estrellas >= 3:
 			var arq_proyecto = c.get("arquetipo", "comercial")
 			Datos.perfil_actor[arq_proyecto] += (estrellas * 2)
 
-		# --- BUFF: ACTOR DE FORMA (ANTI-SABOTAJE) ---
 		var alerta_sabotaje = ""
 		if c.has("estado_tecnicos"):
 			if c["estado_tecnicos"] == "sabotaje":
@@ -964,93 +953,115 @@ func resolver_rutina_general(fue_exito):
 					c["estado_tecnicos"] = "normal"
 					alerta_sabotaje = "🛡️ Tu profesionalismo impidió el sabotaje.\n\n"
 				else:
-					estrellas = 1 
+					estrellas = 1
 					alerta_sabotaje = "🚨 SABOTAJE: Los técnicos te arruinaron.\n\n"
 			elif c["estado_tecnicos"] == "excelente":
-				estrellas = clamp(estrellas + 1, 1, 5) 
+				estrellas = clamp(estrellas + 1, 1, 5)
 
-		# --- CÁLCULO DE TAQUILLA Y PAGO ---
-		var ganancia_final = 0; var audiencia_final = 0
-
+		var ganancia_final = 0
+		var audiencia_final = 0
 		if c.has("tipo_pago") and c["tipo_pago"] == "taquilla":
 			var base_aud = c.get("importancia", 1) * 20
-			var aforo_maximo = 1000 
-			if c.has("es_propia"): 
-				base_aud += (c["influencia_equipo"] * 3) 
+			var aforo_maximo = 1000
+			if c.has("es_propia"):
+				base_aud += (c["influencia_equipo"] * 3)
 				aforo_maximo = Datos.espacios_disponibles[Datos.mi_compania["id_espacio_actual"]]["capacidad_publico"]
-				
 			var sin = _bonos_sinergia_espacio(c, aforo_maximo)
 			aforo_maximo = max(1, int(float(aforo_maximo) * float(sin.get("aforo_mult", 1.0))))
 			audiencia_final = base_aud + int(Datos.stats_actor["seguidores"] * 0.1) + c.get("hype_generado", 0) + int(Datos.lista_contactos.size() * 2)
-			
-			if c.get("estado_tecnicos") == "sabotaje": audiencia_final = int(audiencia_final * 0.3)
-			elif estrellas <= 2: audiencia_final = int(audiencia_final * 0.5) 
-			
+			if c.get("estado_tecnicos") == "sabotaje":
+				audiencia_final = int(audiencia_final * 0.3)
+			elif estrellas <= 2:
+				audiencia_final = int(audiencia_final * 0.5)
 			if audiencia_final >= aforo_maximo:
 				audiencia_final = aforo_maximo
-				c["hubo_sold_out"] = true 
-			
+				c["hubo_sold_out"] = true
 			var sin_ticket = _bonos_sinergia_espacio(c, aforo_maximo)
 			var corte = int(float(c.get("corte_boleto", 5)) * float(sin_ticket.get("ticket_mult", 1.0)))
 			var ganancia_bruta = audiencia_final * corte
-			if c.has("es_propia"): ganancia_final = int(ganancia_bruta * c["porcentaje_ganancia"])
-			else: ganancia_final = ganancia_bruta
+			if c.has("es_propia"):
+				ganancia_final = int(ganancia_bruta * c["porcentaje_ganancia"])
+			else:
+				ganancia_final = ganancia_bruta
 		else:
 			ganancia_final = c.get("paga", 0)
-			if estrellas <= 2: ganancia_final = int(ganancia_final / 2.0) 
+			if estrellas <= 2:
+				ganancia_final = int(ganancia_final / 2.0)
 
-		# --- MULTIPLICADORES DE ARQUETIPO ---
-		var multi_dinero = 1.0; var multi_xp = 1.0; var multi_seg = 1.0; var multi_ego = 1
-		
-		if arq_dom == "comercial": multi_dinero = 1.5; multi_ego = 2
-		elif arq_dom == "fisico": multi_dinero = 0.8
-		if arq_dom == "metodo": multi_xp = 1.5; Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] + 15, 0, 100)
-		elif arq_dom == "instinto": multi_xp = 0.5
-		if arq_dom == "forma": multi_seg = 0.5
+		var multi_dinero = 1.0
+		var multi_xp = 1.0
+		var multi_seg = 1.0
+		var multi_ego = 1
+		if arq_dom == "comercial":
+			multi_dinero = 1.5
+			multi_ego = 2
+		elif arq_dom == "fisico":
+			multi_dinero = 0.8
+		if arq_dom == "metodo":
+			multi_xp = 1.5
+			Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] + 15, 0, 100)
+		elif arq_dom == "instinto":
+			multi_xp = 0.5
+		if arq_dom == "forma":
+			multi_seg = 0.5
 
-		ganancia_final = int(ganancia_final * multi_dinero)
+		ganancia_final = int(ganancia_final * multi_dinero * float(metrica.get("dinero_mult", 1.0)))
 		var b_cont = _bonos_contactos_equipados()
-		var xp_final = int(c["recompensa_xp"] * multi_xp * float(b_cont.get("xp_mult", 1.0)))
-		var seg_final = int(c["recompensa_seguidores"] * multi_seg) + int(b_cont.get("seguidores_victoria", 0))
+		var xp_final = int(c["recompensa_xp"] * multi_xp * float(b_cont.get("xp_mult", 1.0)) * float(metrica.get("xp_mult", 1.0)))
+		var seg_final = int(c["recompensa_seguidores"] * multi_seg * float(metrica.get("seg_mult", 1.0))) + int(b_cont.get("seguidores_victoria", 0))
 
 		Datos.economia["dinero"] += ganancia_final
 		sumar_seguidores(seg_final)
 		Datos.habilidades_actor["xp_actual"] += xp_final
 
-		# --- GUARDAR EN BOOK ---
-		var registro_book = {"titulo": nombre_proyecto, "papel": c.get("papel", "Actor"), "estrellas": estrellas, "ganancia": ganancia_final, "nivel": c.get("nivel_minimo", 1), "sold_out": bool(c.get("hubo_sold_out", false))}
-		if audiencia_final > 0: registro_book["audiencia"] = audiencia_final
+		var registro_book = {
+			"titulo": nombre_proyecto,
+			"papel": c.get("papel", "Actor"),
+			"estrellas": estrellas,
+			"ganancia": ganancia_final,
+			"nivel": c.get("nivel_minimo", 1),
+			"sold_out": bool(c.get("hubo_sold_out", false)),
+			"score": int(metrica.get("score", 0)),
+			"daño": int(estadisticas_funcion.get("puntos_totales", poder_total_encuentro)),
+			"cartas": int(estadisticas_funcion.get("cartas_jugadas", 0)),
+			"combos": int(estadisticas_funcion.get("combos", 0))
+		}
+		if audiencia_final > 0:
+			registro_book["audiencia"] = audiencia_final
 		Datos.historial_proyectos.push_front(registro_book)
 
-		# --- CONSECUENCIAS VISUALES Y REDES ---
 		if c.get("estado_tecnicos") == "sabotaje":
-			Datos.stats_actor["ego"] = clamp(Datos.stats_actor["ego"] - (15 * multi_ego), 0, 100) 
-			mostrar_alerta("🍅 Humillación Técnica", alerta_sabotaje + "Crítica: " + str(estrellas) + "⭐\nGanancias: $" + str(ganancia_final))
+			Datos.stats_actor["ego"] = clamp(Datos.stats_actor["ego"] - (15 * multi_ego), 0, 100)
+			mostrar_alerta("🍅 Humillación Técnica", alerta_sabotaje + "Crítica: " + str(estrellas) + "⭐\nScore: " + str(int(metrica.get("score", 0))) + "\nGanancias: $" + str(ganancia_final))
 			publicar_auto("Peor día de mi vida. Nunca hagan enojar a los técnicos de iluminación. 😭")
 		elif estrellas >= 4:
 			var titulo_alerta = "🏆 Gran Estreno"
-			var txt = alerta_sabotaje + "¡Un éxito rotundo!\nCrítica: " + str(estrellas) + "⭐\n"
+			var txt = alerta_sabotaje + "¡Un éxito rotundo!\nCrítica: " + str(estrellas) + "⭐\nScore: " + str(int(metrica.get("score", 0))) + "\n"
 			if c.has("hubo_sold_out"):
-				Datos.stats_actor["ego"] = clamp(Datos.stats_actor["ego"] + (20 * multi_ego), 0, 100) 
+				Datos.stats_actor["ego"] = clamp(Datos.stats_actor["ego"] + (20 * multi_ego), 0, 100)
 				titulo_alerta = "🔥 ¡SOLD OUT ABSOLUTO! 🔥"
 				txt += "Taquilla: " + str(audiencia_final) + " (¡LLENO TOTAL!)\n"
 				publicar_auto("¡HICIMOS SOLD OUT! No cabía un alfiler para ver '" + nombre_proyecto + "'. 😭🎫")
-			elif audiencia_final > 0: 
-				Datos.stats_actor["ego"] = clamp(Datos.stats_actor["ego"] + (5 * multi_ego), 0, 100) 
+			elif audiencia_final > 0:
+				Datos.stats_actor["ego"] = clamp(Datos.stats_actor["ego"] + (5 * multi_ego), 0, 100)
 				txt += "Taquilla: " + str(audiencia_final) + " personas\n"
 				publicar_auto("Las críticas a '" + nombre_proyecto + "' son hermosas. ⭐⭐⭐⭐⭐")
 			else:
 				Datos.stats_actor["ego"] = clamp(Datos.stats_actor["ego"] + (2 * multi_ego), 0, 100)
 			mostrar_alerta(titulo_alerta, txt + "Ganancias: $" + str(ganancia_final))
 		else:
-			Datos.stats_actor["ego"] = clamp(Datos.stats_actor["ego"] - (5 * multi_ego), 0, 100) 
+			Datos.stats_actor["ego"] = clamp(Datos.stats_actor["ego"] - (5 * multi_ego), 0, 100)
 			var fans_perdidos = c.get("importancia", 1) * 15 * (3 - estrellas)
+			fans_perdidos += int(metrica.get("penalidad_fallo", 0))
 			reducir_seguidores(fans_perdidos)
-			mostrar_alerta("🍅 Fracaso en Crítica", "Un desastre absoluto.\n\nCrítica: " + str(estrellas) + "⭐\nGanancias: $" + str(ganancia_final) + "\nFans Perdidos: -" + str(fans_perdidos))
+			mostrar_alerta("🍅 Fracaso en Crítica", "Un desastre absoluto.\n\nCrítica: " + str(estrellas) + "⭐\nScore: " + str(int(metrica.get("score", 0))) + "\nGanancias: $" + str(ganancia_final) + "\nFans Perdidos: -" + str(fans_perdidos))
 			publicar_auto("A veces las cosas no salen como uno quiere. Pasemos la página. 💔")
 
-		Datos.proyectos_activos.erase(c["id_unico"]); Datos.agenda.erase(Datos.tiempo["dia"])
-		comprobar_hitos_redes(); comprobar_level_up(); actualizar_interfaz()
+		Datos.proyectos_activos.erase(c["id_unico"])
+		Datos.agenda.erase(Datos.tiempo["dia"])
+		comprobar_hitos_redes()
+		comprobar_level_up()
+		actualizar_interfaz()
 		return # Evita que se ejecute otro código de abajo
 	if tipo_rutina == "trabajo":
 		ha_trabajado_hoy = true
@@ -1961,6 +1972,95 @@ func _bonos_contactos_equipados() -> Dictionary:
 			out["hype_flat"] = int(out["hype_flat"]) + (8 * tier)
 	return out
 
+func _contactos_activos_ordenados() -> Array:
+	var arr = []
+	for c in Datos.lista_contactos:
+		if bool(c.get("activo", false)):
+			arr.append(c)
+	arr.sort_custom(func(a, b):
+		return int(a.get("influencia", 0)) > int(b.get("influencia", 0))
+	)
+	return arr
+
+func _resumen_bonus_contacto(c: Dictionary) -> String:
+	var tipo = str(c.get("bonus_tipo", ""))
+	var val = float(c.get("bonus_valor", 0.0))
+	if tipo == "xp_mult":
+		return "XP x" + str(snapped(1.0 + val, 0.01))
+	if tipo == "seguidores_flat":
+		return "+" + str(int(val)) + " seguidores"
+	if tipo == "mulligan":
+		return "+" + str(int(val)) + " mulligan"
+	if tipo == "exigencia_flat":
+		return "-" + str(int(val)) + " exigencia"
+	if tipo == "hype_flat":
+		return "+" + str(int(val)) + " hype"
+	return str(c.get("habilidad", "Perk"))
+
+func _reiniciar_estadisticas_funcion():
+	estadisticas_funcion = {
+		"puntos_totales": 0,
+		"rondas_jugadas": 0,
+		"rondas_ganadas": 0,
+		"cartas_jugadas": 0,
+		"efectos_activados": 0,
+		"combos": 0,
+		"estres_pico": int(Datos.stats_actor.get("estres", 0)),
+		"exigencia_inicial": 0,
+		"exigencia_final": 0,
+		"porcentaje": 0.0
+	}
+
+func _registrar_inicio_funcion(exigencia_objetivo: int):
+	_reiniciar_estadisticas_funcion()
+	estadisticas_funcion["exigencia_inicial"] = max(1, exigencia_objetivo)
+
+func _puntuar_funcion(c: Dictionary, fue_exito: bool) -> Dictionary:
+	var puntos = int(estadisticas_funcion.get("puntos_totales", 0))
+	var exigencia_ini = max(1, int(estadisticas_funcion.get("exigencia_inicial", max(1, exigencia_director))))
+	var exigencia_fin = max(1, int(estadisticas_funcion.get("exigencia_final", max(1, exigencia_director))))
+	var ratio = float(puntos) / float(exigencia_ini)
+	var cumplimiento = clamp(float(puntos) / float(exigencia_fin), 0.0, 2.2)
+	var rondas = max(1, int(estadisticas_funcion.get("rondas_jugadas", 1)))
+	var rondas_ganadas = int(estadisticas_funcion.get("rondas_ganadas", 0))
+	var cartas = int(estadisticas_funcion.get("cartas_jugadas", 0))
+	var efectos = int(estadisticas_funcion.get("efectos_activados", 0))
+	var combos = int(estadisticas_funcion.get("combos", 0))
+	var stress_peak = int(estadisticas_funcion.get("estres_pico", Datos.stats_actor.get("estres", 0)))
+	var nivel_proyecto = max(1, int(c.get("nivel_minimo", 1)))
+
+	var score = 30.0
+	if fue_exito:
+		score += 35.0
+	score += cumplimiento * 40.0
+	score += clamp((float(rondas_ganadas) / float(rondas)) * 18.0, 0.0, 18.0)
+	score += min(16.0, float(efectos) * 2.0)
+	score += min(12.0, float(combos) * 4.0)
+	score -= max(0.0, float(stress_peak - 70) * 0.45)
+	score -= max(0.0, float(rondas - (2 + int(nivel_proyecto / 2))) * 2.5)
+
+	var score_int = int(round(clamp(score, 5.0, 140.0)))
+	var estrellas = 1
+	if score_int >= 120:
+		estrellas = 5
+	elif score_int >= 95:
+		estrellas = 4
+	elif score_int >= 70:
+		estrellas = 3
+	elif score_int >= 45:
+		estrellas = 2
+
+	return {
+		"score": score_int,
+		"estrellas": estrellas,
+		"ratio": ratio,
+		"cumplimiento": cumplimiento,
+		"xp_mult": clamp(0.75 + (score_int / 120.0), 0.65, 1.65),
+		"dinero_mult": clamp(0.7 + (score_int / 140.0), 0.6, 1.5),
+		"seg_mult": clamp(0.65 + (score_int / 130.0), 0.55, 1.45),
+		"penalidad_fallo": int(max(0, 90 - score_int))
+	}
+
 func _actualizar_afinidad_contactos_fin_dia():
 	for i in range(Datos.lista_contactos.size()):
 		var c = Datos.lista_contactos[i]
@@ -2490,7 +2590,7 @@ func actualizar_lista_espacios():
 			btn.modulate = Color(0.5, 1.0, 0.5) # Verde para saber que es tuyo
 		else:
 			# Se usa .bind() para pasarle qué espacio queremos rentar al hacer clic
-			btn.pressed.connect(gestionar_espacio.bind(id_espacio))
+			btn.pressed.connect(mostrar_menu_espacio.bind(id_espacio))
 			
 		contenedor_lista_espacios.add_child(btn)
 
@@ -3455,18 +3555,19 @@ func _on_btn_actuar_pressed():
 	for hijo in contenedor_mano.get_children():
 		if not hijo.is_queued_for_deletion() and hijo is Button:
 			cartas_vivas += 1
-			
-	if seleccion_actual_nodos.is_empty() and cartas_vivas > 0: 
+
+	if seleccion_actual_nodos.is_empty() and cartas_vivas > 0:
 		btn_actuar.disabled = false
 		if is_instance_valid(btn_mulligan) and mulligans_restantes > 0:
 			btn_mulligan.disabled = false
 		resolviendo_balasim = false
 		return
-		
+
 	var puntos_ronda = 0
 	var multiplicador_ronda = 1.0
 	var robar_cartas_extra = 0
-	
+	var efectos_activados_ronda = 0
+
 	var arq_jefe = casting_data_actual.get("arquetipo", "comercial")
 	if tipo_rutina == "ensayo_casa":
 		arq_jefe = "inseguridad"
@@ -3478,7 +3579,7 @@ func _on_btn_actuar_pressed():
 	var prob_critico_base = 0.0
 	if mi_estres >= 40:
 		prob_critico_base = clamp((mi_estres - 35) / 320.0, 0.0, 0.25)
-	
+
 	var arquetipos_usados = {}
 	for id_c in seleccion_actual_ids:
 		var info = Datos.obtener_info_carta(id_c)
@@ -3489,20 +3590,15 @@ func _on_btn_actuar_pressed():
 		var arq_carta = info.get("arquetipo", "versatil")
 		var penal_repeticion = obtener_penalizacion_repeticion_turno(arquetipos_usados, arq_carta)
 		arquetipos_usados[arq_carta] = arquetipos_usados.get(arq_carta, 0) + 1
-		
-		# --- 1. BONO POR ESTADÍSTICAS DEL ACTOR ---
-		var bono_stat = 0
-		bono_stat = obtener_stat_arquetipo(arq_carta)
-		
+
+		var bono_stat = obtener_stat_arquetipo(arq_carta)
 		var poder_escalado = poder_base + int(bono_stat / 6.0)
 
-		# --- 👑 EGO ESCALABLE INFINITO (Bono de Presencia) ---
 		if mi_ego >= 50:
 			var bono_ego = calcular_bono_ego_suavizado(mi_ego, nivel_actual)
 			poder_escalado += bono_ego
 			mostrar_texto_flotante("👑 Ego: +" + str(bono_ego), label_jefe, Color(1, 0.8, 0.2))
-		
-		# --- 💥 ESTRÉS (Crítico de Actuación Visceral) ---
+
 		var prob_critico = prob_critico_base
 		if mi_arq == "metodo":
 			prob_critico = min(prob_critico_base * 1.25, 0.38)
@@ -3529,19 +3625,18 @@ func _on_btn_actuar_pressed():
 			poder_escalado = int(poder_escalado * 1.3)
 			escribir_log_batalla("💥 ¡CRÍTICO! El estrés impulsó tu carta: " + info["nombre"])
 			mostrar_texto_flotante("💥 ¡CRÍTICO!", label_jefe, Color(1, 0.2, 0.2), 1.5)
-		
-		# --- 2. MULTIPLICADOR POR DEBILIDAD DEL JEFE ---
+
 		var multi_tipo = _multiplicador_vs_jefe(arq_jefe, arq_carta)
 		var m_ag = float(bonus_agentes_ronda.get("mult_arq", {}).get(arq_carta, 1.0))
-		
 		puntos_ronda += int((poder_escalado * multi_tipo * m_ag) * penal_repeticion)
 		if Datos.lista_contactos.size() >= 3 and arq_carta == mi_arq:
 			puntos_ronda += 1
-		
+
 		if info.has("efecto"):
 			var ef = info["efecto"]
-			var val = float(info.get("valor", 0))
-			
+			var val = float(Datos.obtener_valor_efecto_carta(id_c))
+			if ef != "" and ef != "basura":
+				efectos_activados_ronda += 1
 			if ef == "bajar_exigencia": exigencia_director = max(1, exigencia_director - int(val))
 			elif ef == "curar_estres": Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] - int(val), 0, 100)
 			elif ef == "robar_carta": robar_cartas_extra += int(val)
@@ -3549,57 +3644,63 @@ func _on_btn_actuar_pressed():
 			elif ef == "multiplicar_poder": multiplicador_ronda *= val
 			elif ef == "escalar_carisma": puntos_ronda += int(Datos.habilidades_actor["carisma"] * val)
 			elif ef == "restaurar_mulligan": mulligans_restantes += int(val)
+			elif ef == "impulso_cero":
+				var impulso = int(val)
+				var max_jefe = max(1, exigencia_director)
+				if poder_acumulado_turno < int(max_jefe * 0.5):
+					impulso += 2
+				puntos_ronda += impulso
+				if randi_range(1, 100) <= 30:
+					mulligans_restantes += 1
+				escribir_log_batalla("✨ Impulso Escénico: +" + str(impulso) + " poder por carta sin daño.")
 			elif ef == "sacrificar_energia":
 				if Datos.stats_actor["energia_actual"] >= val: Datos.stats_actor["energia_actual"] -= int(val)
-				else: puntos_ronda -= info["poder"] 
-				
-	# --- 🌟 PODER ACTIVO DEL MÉTODO (RIESGO/RECOMPENSA) ---
+				else: puntos_ronda -= info["poder"]
+
 	if mi_arq == "metodo" and Datos.stats_actor.get("estres", 0) >= 50:
 		var multiplicador_locura = 1.0 + (Datos.perfil_actor.get("metodo", 0) / 100.0)
 		multiplicador_ronda *= multiplicador_locura
-	
-	# 2. BUSCAR COMBOS (CON FRENO ANTI-CRASH)
+
 	var texto_combo = ""
 	if seleccion_actual_ids.size() >= 2:
 		for id_combo in Datos.combos_balasim.keys():
 			var combo = Datos.combos_balasim[id_combo]
-			
-			# 🚨 FRENO: Verificamos que el combo sea válido antes de leerlo
-			if not combo.has("cartas") or combo["cartas"].size() < 2: 
+			if not combo.has("cartas") or combo["cartas"].size() < 2:
 				continue
-				
 			var req1 = combo["cartas"][0]
 			var req2 = combo["cartas"][1]
-			
 			var bases_sel = []
-			for id_sel in seleccion_actual_ids: bases_sel.append(Datos.obtener_id_base_carta(id_sel))
+			for id_sel in seleccion_actual_ids:
+				bases_sel.append(Datos.obtener_id_base_carta(id_sel))
 			if bases_sel.has(req1) and bases_sel.has(req2):
 				if req1 == req2 and bases_sel.count(req1) < 2: continue
 				multiplicador_ronda *= combo.get("multiplicador", 1.0)
 				texto_combo += combo.get("nombre_combo", "Combo Secreto") + "\n"
+				if tipo_rutina == "funcion":
+					estadisticas_funcion["combos"] = int(estadisticas_funcion.get("combos", 0)) + 1
 				break
-	
+
 	var puntos_finales = int(puntos_ronda * multiplicador_ronda)
 	poder_acumulado_turno += puntos_finales
 	poder_total_encuentro = poder_acumulado_turno
-	
-	# --- SUPER FEEDBACK VISUAL ---
+	if tipo_rutina == "funcion":
+		estadisticas_funcion["puntos_totales"] = poder_total_encuentro
+		estadisticas_funcion["rondas_jugadas"] = int(estadisticas_funcion.get("rondas_jugadas", 0)) + 1
+		estadisticas_funcion["cartas_jugadas"] = int(estadisticas_funcion.get("cartas_jugadas", 0)) + seleccion_actual_ids.size()
+		estadisticas_funcion["efectos_activados"] = int(estadisticas_funcion.get("efectos_activados", 0)) + efectos_activados_ronda
+		estadisticas_funcion["estres_pico"] = max(int(estadisticas_funcion.get("estres_pico", 0)), int(Datos.stats_actor.get("estres", 0)))
+
 	var texto_daño = "🎭 +" + str(puntos_finales) + " Pts!"
 	var color_daño = Color.GREEN
 	var escala_daño = 1.0
-	
 	if texto_combo != "":
 		color_daño = Color.CYAN
 		escala_daño = 1.5
 		mostrar_texto_flotante("🔥 ¡COMBO!", label_jefe, Color.ORANGE, 1.5)
-		
 	mostrar_texto_flotante(texto_daño, label_jefe, color_daño, escala_daño)
-	
-	# LOG DE BATALLA Y COMBOS
 	escribir_log_batalla("🎭 Actuaste. Generaste " + str(puntos_finales) + " puntos.")
 	if texto_combo != "": escribir_log_batalla("🔥 COMBO ACTIVADO: " + texto_combo.replace("\n", " "))
-	
-	# --- CASTIGO DE CARTAS DE PELIGRO EN MANO ---
+
 	var panico_count = 0
 	for hijo in contenedor_mano.get_children():
 		if not hijo.is_queued_for_deletion() and not hijo in seleccion_actual_nodos:
@@ -3610,35 +3711,35 @@ func _on_btn_actuar_pressed():
 		Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] + dmg_panico, 0, 100)
 		escribir_log_batalla("💥 Pánico acumulado: +" + str(dmg_panico) + " Estrés por " + str(panico_count) + " carta(s).")
 		mostrar_texto_flotante("💥 +" + str(dmg_panico) + " Estrés", label_jefe, Color(1, 0.3, 0.3), 1.1)
-				
-	# 3. QUEMAR CARTAS Y LIMPIAR MESA
+
 	for id_c in seleccion_actual_ids:
 		Datos.otorgar_xp_carta(id_c, 8)
-		Datos.mazo_disponible.erase(id_c) 
-		
+		Datos.mazo_disponible.erase(id_c)
 	for nodo in seleccion_actual_nodos:
 		if is_instance_valid(nodo): nodo.queue_free()
 	seleccion_actual_nodos.clear()
 	seleccion_actual_ids.clear()
-	
-	# 4. RESOLUCIÓN DE LA RONDA
+
 	if poder_acumulado_turno >= exigencia_director:
+		if tipo_rutina == "funcion":
+			estadisticas_funcion["rondas_ganadas"] = int(estadisticas_funcion.get("rondas_ganadas", 0)) + 1
+			estadisticas_funcion["exigencia_final"] = exigencia_director
 		_finalizar_balasim(true)
 		return
-		
+
 	rondas_restantes -= 1
 	if rondas_restantes <= 0:
+		if tipo_rutina == "funcion":
+			estadisticas_funcion["exigencia_final"] = exigencia_director
 		_finalizar_balasim(false)
 	else:
-		ejecutar_accion_jefe() 
-		repartir_mano_balasim(false) 
-		
-		if robar_cartas_extra > 0: 
+		ejecutar_accion_jefe()
+		repartir_mano_balasim(false)
+		if robar_cartas_extra > 0:
 			mazo_combate_actual.shuffle()
 			for i in range(min(robar_cartas_extra, mazo_combate_actual.size())):
 				var id_extra = mazo_combate_actual.pop_back()
 				crear_boton_carta_en_mesa(id_extra)
-
 		if mulligans_restantes > 0: btn_mulligan.disabled = false
 		actualizar_ui_balasim(label_jefe.text.split("\n")[0].replace("⚔️ ", ""))
 		btn_actuar.disabled = false
