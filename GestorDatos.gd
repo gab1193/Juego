@@ -59,7 +59,8 @@ var mi_compania = {
 	"fundada": false,
 	"nombre": "Sin Nombre",
 	"id_espacio_actual": "sala_casa",
-	"espacios_propios": []
+	"espacios_propios": [],
+	"mejoras_locales": {}
 }
 
 # ==========================================
@@ -466,27 +467,28 @@ var catalogo_agentes = {
 # se negarán a trabajar contigo si los citas en la sala de tu casa.
 var espacios_disponibles = {
 	"sala_casa": {
-		"nombre": "Sala de tu Casa",
+		"nombre": "Cuarto de Azotea",
 		"renta_mensual": 0,
 		"precio_compra": 0,
+		"tier": 0,
 		"nivel_max_contactos": "Local",
-		"capacidad_equipo": 2,
-		"capacidad_publico": 10
+		"capacidad_equipo": 1,
+		"capacidad_publico": 5,
+		"especialidad": "ninguna"
 	},
-	"cochera_limpia": {"nombre": "Cochera Limpia", "renta_mensual": 50, "precio_compra": 750, "nivel_max_contactos": "Local", "capacidad_equipo": 3, "capacidad_publico": 15},
-	"cafe_cultural": {"nombre": "Café Cultural", "renta_mensual": 150, "precio_compra": 2250, "nivel_max_contactos": "Indie", "capacidad_equipo": 5, "capacidad_publico": 40},
-	"foro_subterraneo": {"nombre": "Foro Subterráneo Indie", "renta_mensual": 400, "precio_compra": 6000, "nivel_max_contactos": "Indie", "capacidad_equipo": 8, "capacidad_publico": 100},
-	"teatro_camara": {"nombre": "Teatro de Cámara Clásico", "renta_mensual": 1200, "precio_compra": 18000, "nivel_max_contactos": "Profesional", "capacidad_equipo": 15, "capacidad_publico": 250},
-	"gran_teatro": {"nombre": "El Gran Teatro de la Ciudad", "renta_mensual": 3500, "precio_compra": 52500, "nivel_max_contactos": "Profesional", "capacidad_equipo": 40, "capacidad_publico": 800}
+	"cafe_bohemio": {"nombre": "Café Bohemio", "renta_mensual": 100, "precio_compra": 1500, "tier": 1, "nivel_max_contactos": "Indie", "capacidad_equipo": 4, "capacidad_publico": 30, "especialidad": "intimo"},
+	"foro_underground": {"nombre": "Foro Alternativo (Underground)", "renta_mensual": 350, "precio_compra": 5250, "tier": 2, "nivel_max_contactos": "Indie", "capacidad_equipo": 7, "capacidad_publico": 80, "especialidad": "experimental"},
+	"teatro_camara": {"nombre": "Teatro de Cámara Clásico", "renta_mensual": 1000, "precio_compra": 15000, "tier": 3, "nivel_max_contactos": "Profesional", "capacidad_equipo": 15, "capacidad_publico": 250, "especialidad": "texto"},
+	"gran_auditorio": {"nombre": "Gran Auditorio de la Ciudad", "renta_mensual": 4000, "precio_compra": 60000, "tier": 4, "nivel_max_contactos": "Profesional", "capacidad_equipo": 45, "capacidad_publico": 1000, "especialidad": "mega"}
 }
 # ==========================================
 # 🎭 FORMATOS DE PRODUCCIÓN PROPIA (NUEVO)
 # ==========================================
 var formatos_produccion = {
-	"monologo_bolsillo": {"titulo": "Monólogo de Bolsillo", "descripcion": "Formato pequeño para testear material.", "costo_montaje": 200, "corte_boleto": 12, "dias_de_trabajo": 2, "aforo_minimo": 15, "dificultad": 1.7, "importancia": 1, "requiere_taquilla": true},
-	"obra_reparto": {"titulo": "Obra de Reparto", "descripcion": "Montaje estándar con elenco completo.", "costo_montaje": 800, "corte_boleto": 20, "dias_de_trabajo": 4, "aforo_minimo": 50, "dificultad": 2.8, "importancia": 2, "requiere_taquilla": true},
-	"musical_gran_formato": {"titulo": "Musical / Gran Formato", "descripcion": "Gran producción de alto riesgo y alta recompensa.", "costo_montaje": 3000, "corte_boleto": 35, "dias_de_trabajo": 6, "aforo_minimo": 200, "dificultad": 4.2, "importancia": 3, "requiere_taquilla": true},
-	"cortometraje_indie": {"titulo": "Cortometraje Indie", "descripcion": "Proyecto para festivales y prestigio, sin taquilla directa.", "costo_montaje": 1500, "corte_boleto": 0, "dias_de_trabajo": 3, "aforo_minimo": 0, "dificultad": 3.2, "importancia": 3, "requiere_taquilla": false}
+	"monologo_bolsillo": {"titulo": "Monólogo de Bolsillo", "descripcion": "Formato pequeño para testear material.", "costo_montaje": 200, "corte_boleto": 12, "dias_de_trabajo": 2, "aforo_minimo": 15, "dificultad": 1.7, "importancia": 1, "requiere_taquilla": true, "formato_tipo": "intimo"},
+	"obra_reparto": {"titulo": "Obra de Reparto", "descripcion": "Montaje estándar con elenco completo.", "costo_montaje": 800, "corte_boleto": 20, "dias_de_trabajo": 4, "aforo_minimo": 50, "dificultad": 2.8, "importancia": 2, "requiere_taquilla": true, "formato_tipo": "experimental"},
+	"musical_gran_formato": {"titulo": "Musical / Gran Formato", "descripcion": "Gran producción de alto riesgo y alta recompensa.", "costo_montaje": 3000, "corte_boleto": 35, "dias_de_trabajo": 6, "aforo_minimo": 200, "dificultad": 4.2, "importancia": 3, "requiere_taquilla": true, "formato_tipo": "mega"},
+	"cortometraje_indie": {"titulo": "Cortometraje Indie", "descripcion": "Proyecto para festivales y prestigio, sin taquilla directa.", "costo_montaje": 1500, "corte_boleto": 0, "dias_de_trabajo": 3, "aforo_minimo": 0, "dificultad": 3.2, "importancia": 3, "requiere_taquilla": false, "formato_tipo": "experimental"}
 }
 var estado_actual = "normal" # Puede ser: normal, inspirado, torpe, viral, resaca
 var hitos_redes = {
@@ -705,7 +707,8 @@ func reiniciar_datos():
 	"instinto": 0    
 }
 	tiempo = {"dia": 1, "fase_dia": "Mañana"}
-	mi_compania = {"fundada": false, "nombre": "Sin Nombre", "id_espacio_actual": "sala_casa", "espacios_propios": []}
+	mi_compania = {"fundada": false, "nombre": "Sin Nombre", "id_espacio_actual": "sala_casa", "espacios_propios": [],
+	"mejoras_locales": {}}
 	habilidades_actor = {
 		"nivel_general": 1, "xp_actual": 0, "xp_requerida": 100, "puntos_habilidad": 0,
 		"tecnica_vocal": 1, "expresion_corporal": 1, "carisma": 1, "memoria": 1
@@ -934,6 +937,8 @@ func cargar_partida() -> bool:
 			mi_compania = datos_cargados.get("mi_compania", mi_compania)
 			if not mi_compania.has("espacios_propios"):
 				mi_compania["espacios_propios"] = []
+				if not mi_compania.has("mejoras_locales"):
+					mi_compania["mejoras_locales"] = {}
 			lista_contactos = datos_cargados.get("lista_contactos", lista_contactos)
 			historial_proyectos = datos_cargados.get("historial_proyectos", historial_proyectos)
 			

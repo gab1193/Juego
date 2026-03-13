@@ -118,6 +118,8 @@ var respuesta_correcta = ""
 var casting_en_progreso = ""
 var casting_seleccionado_temp = "" 
 var desplazamiento_fechas = 0 # Cuántos días negociaste
+var popup_confirmar_dia: ConfirmationDialog = null
+var popup_menu_espacio: AcceptDialog = null
 var dias_propuestos_temp = [] # Las fechas exactas que parpadean
 var casting_data_actual = {} 
 var proyecto_a_ensayar = "" # Para saber qué obra elegiste estudiar
@@ -361,16 +363,16 @@ func actualizar_interfaz():
 		var evento_hoy = Datos.agenda[dia_hoy]
 		if evento_hoy.begins_with("Lectura_"):
 			btn_llamado.text = "📖 LECTURA GUION (-1 E)"
-			btn_llamado.visible = true; btn_trabajar.visible = false; btn_ensayar.visible = false
+			btn_llamado.visible = true; btn_trabajar.visible = true; btn_ensayar.visible = true
 		elif evento_hoy.begins_with("Tecnico_"):
 			btn_llamado.text = "💡 ENSAYO TÉCNICO (-1 E)"
-			btn_llamado.visible = true; btn_trabajar.visible = false; btn_ensayar.visible = false
+			btn_llamado.visible = true; btn_trabajar.visible = true; btn_ensayar.visible = true
 		elif evento_hoy.begins_with("EnsayoCast_"):
 			btn_llamado.text = "🎭 ENSAYO GENERAL (-1 E)"
-			btn_llamado.visible = true; btn_trabajar.visible = false; btn_ensayar.visible = false
+			btn_llamado.visible = true; btn_trabajar.visible = true; btn_ensayar.visible = true
 		elif evento_hoy.begins_with("Grabacion_"):
 			btn_llamado.text = "🎬 IR A FUNCIÓN/SET (-1 E)"
-			btn_llamado.visible = true; btn_trabajar.visible = false; btn_ensayar.visible = false
+			btn_llamado.visible = true; btn_trabajar.visible = true; btn_ensayar.visible = true
 		else:
 			btn_llamado.visible = false; btn_trabajar.visible = true; btn_ensayar.visible = true
 	else:
@@ -977,6 +979,8 @@ func resolver_rutina_general(fue_exito):
 				base_aud += (c["influencia_equipo"] * 3) 
 				aforo_maximo = Datos.espacios_disponibles[Datos.mi_compania["id_espacio_actual"]]["capacidad_publico"]
 				
+			var sin = _bonos_sinergia_espacio(c, aforo_maximo)
+			aforo_maximo = max(1, int(float(aforo_maximo) * float(sin.get("aforo_mult", 1.0))))
 			audiencia_final = base_aud + int(Datos.stats_actor["seguidores"] * 0.1) + c.get("hype_generado", 0) + int(Datos.lista_contactos.size() * 2)
 			
 			if c.get("estado_tecnicos") == "sabotaje": audiencia_final = int(audiencia_final * 0.3)
@@ -986,7 +990,9 @@ func resolver_rutina_general(fue_exito):
 				audiencia_final = aforo_maximo
 				c["hubo_sold_out"] = true 
 			
-			var ganancia_bruta = audiencia_final * c.get("corte_boleto", 5)
+			var sin_ticket = _bonos_sinergia_espacio(c, aforo_maximo)
+			var corte = int(float(c.get("corte_boleto", 5)) * float(sin_ticket.get("ticket_mult", 1.0)))
+			var ganancia_bruta = audiencia_final * corte
 			if c.has("es_propia"): ganancia_final = int(ganancia_bruta * c["porcentaje_ganancia"])
 			else: ganancia_final = ganancia_bruta
 		else:
@@ -1158,7 +1164,68 @@ func _on_btn_llamado_pressed():
 		else:
 			iniciar_skill_check("funcion")
 
+func _mostrar_confirmacion_fin_dia():
+	if popup_confirmar_dia == null:
+		popup_confirmar_dia = ConfirmationDialog.new()
+		popup_confirmar_dia.title = "Confirmar fin del día"
+		popup_confirmar_dia.dialog_text = "¿Estás seguro de que quieres terminar tu día? Recuperarás tu energía, pero cualquier evento o llamado pendiente se perderá."
+		popup_confirmar_dia.confirmed.connect(_procesar_fin_dia)
+		add_child(popup_confirmar_dia)
+	popup_confirmar_dia.popup_centered()
+
 func _on_boton_dormir_pressed():
+	_mostrar_confirmacion_fin_dia()
+
+func _bonos_sinergia_espacio(c: Dictionary, aforo_maximo: int) -> Dictionary:
+	var out = {"xp_mult": 1.0, "seg_mult": 1.0, "ticket_mult": 1.0, "aforo_mult": 1.0, "hype_extra": 0}
+	if not bool(c.get("es_propia", false)):
+		return out
+	var esp_id = str(Datos.mi_compania.get("id_espacio_actual", "sala_casa"))
+	var esp = Datos.espacios_disponibles.get(esp_id, {})
+	var esp_esp = str(esp.get("especialidad", "ninguna"))
+	var f_tipo = str(c.get("formato_tipo", ""))
+	if esp_esp == "intimo" and f_tipo == "intimo":
+		out["seg_mult"] = 1.2
+	if esp_esp == "experimental" and f_tipo == "experimental":
+		out["xp_mult"] = 1.2
+	if esp_esp == "mega" and f_tipo == "mega":
+		out["ticket_mult"] = 1.15
+	if f_tipo == "mega" and esp_esp == "intimo":
+		out["aforo_mult"] = 0.7
+	if Datos.mi_compania.has("mejoras_locales"):
+		var m = Datos.mi_compania["mejoras_locales"].get(esp_id, {})
+		if bool(m.get("asientos_vip", false)):
+			out["aforo_mult"] = float(out["aforo_mult"]) * 1.15
+			out["ticket_mult"] = float(out["ticket_mult"]) * 1.08
+		if bool(m.get("vallas", false)):
+			out["hype_extra"] = int(out["hype_extra"]) + 50
+	return out
+
+func _tiene_mejora_local(id_espacio: String, clave: String) -> bool:
+	if not Datos.mi_compania.has("mejoras_locales"):
+		return false
+	return bool(Datos.mi_compania["mejoras_locales"].get(id_espacio, {}).get(clave, false))
+
+func _comprar_mejora_local(id_espacio: String, clave: String, costo: int):
+	if not _espacio_es_propietario(id_espacio):
+		mostrar_alerta("Mejora bloqueada", "Solo puedes mejorar espacios comprados.")
+		return
+	if _tiene_mejora_local(id_espacio, clave):
+		mostrar_alerta("Ya comprada", "Esa mejora ya está activa.")
+		return
+	if Datos.economia["dinero"] < costo:
+		mostrar_alerta("Sin fondos", "Necesitas $" + str(costo) + ".")
+		return
+	Datos.economia["dinero"] -= costo
+	if not Datos.mi_compania.has("mejoras_locales"):
+		Datos.mi_compania["mejoras_locales"] = {}
+	if not Datos.mi_compania["mejoras_locales"].has(id_espacio):
+		Datos.mi_compania["mejoras_locales"][id_espacio] = {}
+	Datos.mi_compania["mejoras_locales"][id_espacio][clave] = true
+	mostrar_alerta("✅ Mejora comprada", "Instalaste mejora en " + str(Datos.espacios_disponibles[id_espacio].get("nombre", id_espacio)) + ".")
+	actualizar_interfaz()
+
+func _procesar_fin_dia():
 	var dia_hoy = Datos.tiempo["dia"]
 	if Datos.agenda.has(dia_hoy) and (Datos.agenda[dia_hoy].begins_with("Trabajo_") or Datos.agenda[dia_hoy].begins_with("EnsayoCast_") or Datos.agenda[dia_hoy].begins_with("Grabacion_")):
 		mostrar_alerta("¡FALTA GRAVE!", "No fuiste a tu llamado. El director está furioso.")
@@ -1238,6 +1305,8 @@ func _on_boton_dormir_pressed():
 		# ¡NUEVA LÓGICA DE RENTA DOBLE!
 		var espacio_id = Datos.mi_compania["id_espacio_actual"]
 		var renta_espacio = Datos.espacios_disponibles[espacio_id]["renta_mensual"]
+		if _espacio_es_propietario(espacio_id):
+			renta_espacio = 0
 		var renta_total = 300 + renta_espacio
 		
 		var texto_renta = "Desglose de Renta Mensual:\n"
@@ -2302,7 +2371,9 @@ func evaluar_respuesta(texto_elegido):
 			audiencia_final = aforo_maximo
 			c["hubo_sold_out"] = true 
 		
-		var ganancia_bruta = audiencia_final * c.get("corte_boleto", 5)
+		var sin_ticket = _bonos_sinergia_espacio(c, aforo_maximo)
+		var corte = int(float(c.get("corte_boleto", 5)) * float(sin_ticket.get("ticket_mult", 1.0)))
+		var ganancia_bruta = audiencia_final * corte
 		if c.has("es_propia"): ganancia_final = int(ganancia_bruta * c["porcentaje_ganancia"])
 		else: ganancia_final = ganancia_bruta
 	else:
@@ -2332,8 +2403,9 @@ func evaluar_respuesta(texto_elegido):
 
 	ganancia_final = int(ganancia_final * multi_dinero)
 	var b_cont = _bonos_contactos_equipados()
-	var xp_final = int(c["recompensa_xp"] * multi_xp * float(b_cont.get("xp_mult", 1.0)))
-	var seg_final = int(c["recompensa_seguidores"] * multi_seg) + int(b_cont.get("seguidores_victoria", 0))
+	var sin_rew = _bonos_sinergia_espacio(c, 0)
+	var xp_final = int(c["recompensa_xp"] * multi_xp * float(b_cont.get("xp_mult", 1.0)) * float(sin_rew.get("xp_mult", 1.0)))
+	var seg_final = int(c["recompensa_seguidores"] * multi_seg * float(sin_rew.get("seg_mult", 1.0))) + int(b_cont.get("seguidores_victoria", 0))
 
 	Datos.economia["dinero"] += ganancia_final
 	sumar_seguidores(seg_final)
@@ -2422,36 +2494,70 @@ func actualizar_lista_espacios():
 			
 		contenedor_lista_espacios.add_child(btn)
 
-func gestionar_espacio(id_espacio):
+func mostrar_menu_espacio(id_espacio):
+	if popup_menu_espacio != null and is_instance_valid(popup_menu_espacio):
+		popup_menu_espacio.queue_free()
+	popup_menu_espacio = AcceptDialog.new()
+	popup_menu_espacio.title = "Gestión de Espacio"
+	popup_menu_espacio.dialog_text = "Elige acción para: " + str(Datos.espacios_disponibles[id_espacio].get("nombre", id_espacio))
+	popup_menu_espacio.get_ok_button().visible = false
+	add_child(popup_menu_espacio)
+	var vb = VBoxContainer.new()
+	popup_menu_espacio.add_child(vb)
+	var b_r = Button.new(); b_r.text = "Rentar"; b_r.pressed.connect(func(): _accion_espacio(id_espacio, "rentar")); vb.add_child(b_r)
+	var b_c = Button.new(); b_c.text = "Comprar"; b_c.pressed.connect(func(): _accion_espacio(id_espacio, "comprar")); vb.add_child(b_c)
+	if _espacio_es_propietario(id_espacio):
+		var b_u = Button.new(); b_u.text = "Usar como local actual"; b_u.pressed.connect(func(): _accion_espacio(id_espacio, "usar")); vb.add_child(b_u)
+		var b_m = Button.new(); b_m.text = "Mejoras"; b_m.pressed.connect(func(): _mostrar_mejoras_local(id_espacio)); vb.add_child(b_m)
+	var b_x = Button.new(); b_x.text = "Cancelar"; b_x.pressed.connect(func(): popup_menu_espacio.hide()); vb.add_child(b_x)
+	popup_menu_espacio.popup_centered(Vector2i(520, 320))
+
+func _accion_espacio(id_espacio: String, accion: String):
+	if popup_menu_espacio != null:
+		popup_menu_espacio.hide()
 	var espacio = Datos.espacios_disponibles[id_espacio]
-	# Regla de Bienes Raíces: Piden 2 meses por adelantado (Depósito + Renta)
 	var costo_renta = int(espacio["renta_mensual"]) * 2
 	var costo_compra = int(espacio.get("precio_compra", int(espacio["renta_mensual"]) * 15))
-	var ya_dueno = _espacio_es_propietario(id_espacio)
-	if ya_dueno:
-		Datos.mi_compania["id_espacio_actual"] = id_espacio
-		mostrar_alerta("🏢 Espacio Seleccionado", "Ahora operarás desde: " + str(espacio["nombre"]))
-		actualizar_interfaz(); actualizar_lista_espacios(); return
-	if Datos.economia["dinero"] >= costo_compra:
-		Datos.economia["dinero"] -= costo_compra
-		if not Datos.mi_compania.has("espacios_propios"):
-			Datos.mi_compania["espacios_propios"] = []
-		Datos.mi_compania["espacios_propios"].append(id_espacio)
-		Datos.mi_compania["id_espacio_actual"] = id_espacio
-		mostrar_alerta("🏗️ Compra de Propiedad", "Compraste " + str(espacio["nombre"]) + " por -$" + str(costo_compra) + ". Ya no pagas renta mensual de este lugar.")
-	elif Datos.economia["dinero"] >= costo_renta:
-		Datos.economia["dinero"] -= costo_renta
-		Datos.mi_compania["id_espacio_actual"] = id_espacio
-		mostrar_alerta("📦 Mudanza Exitosa", "Has rentado: " + espacio["nombre"] + "\nPagaste -$" + str(costo_renta) + " por depósito + primer mes.")
-		
-		# ¡Publicamos en redes el logro!
-		publicar_auto("¡Nuevo espacio creativo! Oficialmente nos mudamos a " + espacio["nombre"] + ". Se vienen proyectos enormes. 🏢✨")
-		
-		actualizar_interfaz()
-		actualizar_lista_espacios()
+	if accion == "usar":
+		if _espacio_es_propietario(id_espacio):
+			Datos.mi_compania["id_espacio_actual"] = id_espacio
+			mostrar_alerta("🏢 Espacio Seleccionado", "Ahora operarás desde: " + str(espacio["nombre"]))
+	elif accion == "comprar":
+		if Datos.economia["dinero"] >= costo_compra and costo_compra > 0:
+			Datos.economia["dinero"] -= costo_compra
+			if not Datos.mi_compania.has("espacios_propios"):
+				Datos.mi_compania["espacios_propios"] = []
+			if not Datos.mi_compania["espacios_propios"].has(id_espacio):
+				Datos.mi_compania["espacios_propios"].append(id_espacio)
+			Datos.mi_compania["id_espacio_actual"] = id_espacio
+			mostrar_alerta("🏗️ Compra de Propiedad", "Compraste " + str(espacio["nombre"]) + " por -$" + str(costo_compra) + ".")
+		else:
+			mostrar_alerta("❌ Fondos Insuficientes", "Necesitas $" + str(costo_compra) + " para comprar.")
 	else:
-		mostrar_alerta("❌ Fondos Insuficientes", "Necesitas al menos $" + str(costo_renta) + " para rentar o $" + str(costo_compra) + " para comprar este espacio.")
+		if Datos.economia["dinero"] >= costo_renta:
+			Datos.economia["dinero"] -= costo_renta
+			Datos.mi_compania["id_espacio_actual"] = id_espacio
+			mostrar_alerta("📦 Mudanza Exitosa", "Has rentado: " + espacio["nombre"] + "\nPagaste -$" + str(costo_renta) + " por depósito + primer mes.")
+		else:
+			mostrar_alerta("❌ Fondos Insuficientes", "Necesitas $" + str(costo_renta) + " para rentar.")
+	actualizar_interfaz()
+	actualizar_lista_espacios()
 
+func _mostrar_mejoras_local(id_espacio: String):
+	if popup_menu_espacio != null:
+		popup_menu_espacio.hide()
+	var popup = AcceptDialog.new()
+	popup.title = "Mejoras de Infraestructura"
+	popup.dialog_text = "Compra mejoras para " + str(Datos.espacios_disponibles[id_espacio].get("nombre", id_espacio))
+	popup.get_ok_button().visible = false
+	add_child(popup)
+	var vb = VBoxContainer.new(); popup.add_child(vb)
+	var b1 = Button.new(); b1.text = "Sistema Luces LED ($900)"; b1.pressed.connect(func(): _comprar_mejora_local(id_espacio, "luces_led", 900)); vb.add_child(b1)
+	var b2 = Button.new(); b2.text = "Cafetería Lobby ($450)"; b2.pressed.connect(func(): _comprar_mejora_local(id_espacio, "cafeteria", 450)); vb.add_child(b2)
+	var b3 = Button.new(); b3.text = "Asientos VIP ($1800)"; b3.pressed.connect(func(): _comprar_mejora_local(id_espacio, "asientos_vip", 1800)); vb.add_child(b3)
+	var b4 = Button.new(); b4.text = "Vallas Publicitarias ($2200)"; b4.pressed.connect(func(): _comprar_mejora_local(id_espacio, "vallas", 2200)); vb.add_child(b4)
+	var bx = Button.new(); bx.text = "Cerrar"; bx.pressed.connect(func(): popup.hide()); vb.add_child(bx)
+	popup.popup_centered(Vector2i(520, 320))
 
 # ==========================================
 # 🎬 APP PRODUCTORA (CREAR OBRAS PROPIAS)
@@ -2460,10 +2566,7 @@ func _on_btn_app_productora_pressed():
 	contenedor_menu_inicio.visible = false
 	panel_app_productora.visible = true
 	input_nombre_compania.text = Datos.mi_compania["nombre"]
-	if Datos.mi_compania["fundada"]:
-		input_nombre_compania.editable = false
-	else:
-		input_nombre_compania.editable = true
+	input_nombre_compania.editable = not Datos.mi_compania["fundada"]
 	for hijo in contenedor_lista_productora.get_children():
 		hijo.queue_free()
 
@@ -2499,7 +2602,6 @@ func _on_btn_app_productora_pressed():
 				btn.pressed.connect(lanzar_produccion_propia.bind(id_formato, director, guionista, productor))
 		btn.text = txt
 		contenedor_lista_productora.add_child(btn)
-
 func _on_btn_volver_inicio_productora_pressed():
 	panel_app_productora.visible = false
 	contenedor_menu_inicio.visible = true
@@ -2536,8 +2638,12 @@ func lanzar_produccion_propia(id_formato, director, guionista, productor):
 		"recompensa_xp": 350 + (tier_dir * 120),
 		"recompensa_seguidores": 25 + (tier_gui * 20),
 		"rendimiento_acumulado": 0,
-		"hype_generado": int(8 * tier_gui + _bonos_contactos_equipados().get("hype_flat", 0))
+		"hype_generado": int(8 * tier_gui + _bonos_contactos_equipados().get("hype_flat", 0)),
+		"formato_tipo": str(formato.get("formato_tipo", "intimo"))
 	}
+	var esp_act = str(Datos.mi_compania.get("id_espacio_actual", "sala_casa"))
+	if _tiene_mejora_local(esp_act, "vallas"):
+		mi_proyecto["hype_generado"] += 50
 	if not bool(formato.get("requiere_taquilla", true)):
 		mi_proyecto["paga"] = 0
 		mi_proyecto["recompensa_xp"] += 180
@@ -2592,7 +2698,10 @@ func _on_btn_tec_normal_pressed():
 
 func _on_btn_tec_nada_pressed():
 	# Si no les pagas, hay un 60% de probabilidad de que te saboteen
-	if randi_range(1, 100) <= 60:
+	var chance_sabotaje = 60
+	if _tiene_mejora_local(str(Datos.mi_compania.get("id_espacio_actual", "sala_casa")), "luces_led"):
+		chance_sabotaje = 30
+	if randi_range(1, 100) <= chance_sabotaje:
 		casting_data_actual["estado_tecnicos"] = "sabotaje"
 	else:
 		casting_data_actual["estado_tecnicos"] = "normal" # Tuviste suerte, no hicieron nada
@@ -3928,7 +4037,7 @@ func crear_panel_admin():
 	btn_xp.pressed.connect(func(): Datos.habilidades_actor["xp_actual"] += 100; comprobar_level_up(); actualizar_interfaz())
 	
 	var btn_dia = Button.new(); btn_dia.text = "⏩ Saltar Día"
-	btn_dia.pressed.connect(func(): _on_boton_dormir_pressed())
+	btn_dia.pressed.connect(func(): _procesar_fin_dia())
 
 	var btn_cartas = Button.new(); btn_cartas.text = "🃏 Rellenar Mano"
 	btn_cartas.pressed.connect(func(): Datos.mazo_disponible = Datos.mazo_jugador.duplicate(); mostrar_alerta("Admin", "Mazo Disponible recargado."))
