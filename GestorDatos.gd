@@ -59,11 +59,19 @@ var mi_compania = {
 	"fundada": false,
 	"nombre": "Sin Nombre",
 	"id_espacio_actual": "sala_casa",
+	"contrato_renta": {"id_espacio": "sala_casa", "vence_dia": -1},
 	"espacios_propios": [],
 	"mejoras_locales": {},
 	"prestigio": 0,
 	"producciones_realizadas": 0,
 	"tier_empresa": 0
+}
+
+var mejoras_simzon = {
+	"aro_luz": false,
+	"suscripcion_meditacion": false,
+	"set_utileria": false,
+	"microfono_solapa": false
 }
 
 # ==========================================
@@ -755,6 +763,7 @@ func reiniciar_datos():
 		"fundada": false,
 		"nombre": "Sin Nombre",
 		"id_espacio_actual": "sala_casa",
+		"contrato_renta": {"id_espacio": "sala_casa", "vence_dia": -1},
 		"espacios_propios": [],
 		"mejoras_locales": {},
 		"prestigio": 0,
@@ -779,6 +788,7 @@ func reiniciar_datos():
 	historial_posts.clear()
 	proyectos_activos.clear()
 	historial_proyectos.clear()
+	mejoras_simzon = {"aro_luz": false, "suscripcion_meditacion": false, "set_utileria": false, "microfono_solapa": false}
 
 # ==========================================
 # 🧑‍🤝‍🧑 GENERADOR DE NOMBRES Y USUARIOS
@@ -983,7 +993,8 @@ func guardar_partida():
 		"temporada_actual": temporada_actual,
 		"mi_compania": mi_compania,
 		"lista_contactos": lista_contactos,
-		"historial_proyectos": historial_proyectos
+		"historial_proyectos": historial_proyectos,
+		"mejoras_simzon": mejoras_simzon
 	}
 	
 	# Abrimos el archivo en modo ESCRITURA y guardamos en formato JSON
@@ -1019,6 +1030,8 @@ func cargar_partida() -> bool:
 			agentes_poseidos = datos_cargados.get("agentes_poseidos", agentes_poseidos)
 			proyectos_activos = datos_cargados.get("proyectos_activos", proyectos_activos)
 			mi_compania = datos_cargados.get("mi_compania", mi_compania)
+			if not mi_compania.has("contrato_renta"):
+				mi_compania["contrato_renta"] = {"id_espacio": "sala_casa", "vence_dia": -1}
 			if not mi_compania.has("espacios_propios"):
 				mi_compania["espacios_propios"] = []
 			if not mi_compania.has("mejoras_locales"):
@@ -1031,6 +1044,7 @@ func cargar_partida() -> bool:
 				mi_compania["tier_empresa"] = 0
 			lista_contactos = datos_cargados.get("lista_contactos", lista_contactos)
 			historial_proyectos = datos_cargados.get("historial_proyectos", historial_proyectos)
+			mejoras_simzon = datos_cargados.get("mejoras_simzon", mejoras_simzon)
 			
 			if datos_cargados.has("agenda"):
 				agenda.clear()

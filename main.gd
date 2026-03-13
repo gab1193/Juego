@@ -5,8 +5,8 @@ extends Node2D
 @onready var label_dia = $CapaUI/LabelDia
 @onready var label_dinero = $CapaUI/LabelDinero
 @onready var label_energia = $CapaUI/LabelEnergia
-@onready var label_estres = $CapaUI/PanelStats/VBoxContainer/LabelEstres 
-@onready var label_ego = $CapaUI/PanelStats/VBoxContainer/LabelEgo       
+@onready var label_estres = $CapaUI/PanelStats/VBoxContainer/LabelEstres
+@onready var label_ego = $CapaUI/PanelStats/VBoxContainer/LabelEgo
 @onready var label_nivel = $CapaUI/PanelStats/VBoxContainer/LabelNivel
 @onready var label_stats = $CapaUI/PanelStats/VBoxContainer/LabelStats
 @onready var label_arquetipo = $CapaUI/LabelArquetipo
@@ -38,6 +38,7 @@ extends Node2D
 
 @onready var panel_app_tienda = $CapaUI/PanelSimPhone/PanelAppTienda
 @onready var btn_comprar_cafe = $CapaUI/PanelSimPhone/PanelAppTienda/VBoxContainer/BtnComprarCafe
+@onready var contenedor_tienda = $CapaUI/PanelSimPhone/PanelAppTienda/VBoxContainer
 
 # --- REFERENCIAS REDES SOCIALES Y SEGUIDORES ---
 @onready var panel_app_redes = $CapaUI/PanelSimPhone/PanelAppRedes
@@ -90,7 +91,7 @@ var mazo_combate_actual = []
 @onready var panel_evento_matutino = $CapaUI/PanelEventoMatutino
 @onready var label_titulo_evento = $CapaUI/PanelEventoMatutino/VBoxContainer/LabelTituloEvento
 @onready var label_desc_evento = $CapaUI/PanelEventoMatutino/VBoxContainer/LabelDescEvento
-@onready var btn_aceptar_evento = $CapaUI/PanelEventoMatutino/VBoxContainer/BtnAceptarEvento 
+@onready var btn_aceptar_evento = $CapaUI/PanelEventoMatutino/VBoxContainer/BtnAceptarEvento
 
 @onready var panel_rutina = $CapaUI/PanelRutina
 @onready var label_titulo_rutina = $CapaUI/PanelRutina/LabelTituloRutina
@@ -113,23 +114,23 @@ var poder_total_encuentro = 0   # Puntos acumulados entre rondas
 var seleccion_actual_nodos = [] # Botones seleccionados ahora mismo
 var seleccion_actual_ids = []   # IDs de las cartas seleccionadas
 var rondas_restantes = 0        # Cuántos intentos te quedan
-var tiempo_restante = 0.0 
+var tiempo_restante = 0.0
 var respuesta_correcta = ""
 var casting_en_progreso = ""
-var casting_seleccionado_temp = "" 
+var casting_seleccionado_temp = ""
 var desplazamiento_fechas = 0 # Cuántos días negociaste
 var popup_confirmar_dia: ConfirmationDialog = null
 var popup_menu_espacio: AcceptDialog = null
 var dias_propuestos_temp = [] # Las fechas exactas que parpadean
-var casting_data_actual = {} 
+var casting_data_actual = {}
 var proyecto_a_ensayar = "" # Para saber qué obra elegiste estudiar
 var carta_entrenando_id = ""
 @onready var panel_seleccion_ensayo = $CapaUI/PanelSeleccionEnsayo
 @onready var contenedor_opciones_ensayo = $CapaUI/PanelSeleccionEnsayo/VBoxContainer/ContenedorOpcionesEnsayo
-var castings_de_hoy = [] 
+var castings_de_hoy = []
 var rutina_activa = false
 var tipo_rutina = ""
-var cursor_velocidad = 500 
+var cursor_velocidad = 500
 var cursor_direccion = 1
 var monologo_activo = false
 var monologo_tiempo = 0.0
@@ -151,6 +152,7 @@ var ha_trabajado_hoy = false
 var ha_publicado_hoy = false
 var ha_ido_mixer_hoy = false
 var cafes_tomados_hoy = 0 # <--- NUEVA VARIABLE DE LÍMITE
+var simzon_extra_creado = false
 
 var lineas_guion = [
 	{"texto": "Ser o no ser, ahí está el [___].", "correcta": "detalle", "incorrectas": ["dilema", "problema"]},
@@ -163,21 +165,21 @@ var lineas_guion = [
 func _ready():
 	# --- SISTEMA DE CARGA AUTOMÁTICA ---
 	var carga_exitosa = Datos.cargar_partida()
-	
+
 	if carga_exitosa:
 		print("El jugador continuó su carrera.")
 	else:
 		print("Nueva partida iniciada.")
 	# --- NORMALIZACIÓN DE CARTAS (balance + arquetipos) ---
 	Datos.normalizar_catalogo_cartas()
-		
+
 	actualizar_interfaz() # Refrescamos la UI con los datos cargados
 	# -----------------------------------
 	panel_app_academia.visible = false
 	panel_balasim.visible = false
 	panel_app_mazo.visible = false
 	panel_level_up.visible = false
-	panel_simphone.visible = false 
+	panel_simphone.visible = false
 	panel_app_agenda.visible = false
 	panel_app_castings.visible = false
 	panel_app_redes.visible = false
@@ -187,16 +189,16 @@ func _ready():
 	panel_evento_matutino.z_index = 200
 	panel_minijuego.visible = false
 	panel_confirmacion.visible = false
-	panel_rutina.visible = false 
+	panel_rutina.visible = false
 	panel_info_stats.visible = false
-	panel_game_over.visible = false 
+	panel_game_over.visible = false
 	panel_lista_seguidores.visible = false
 	panel_app_contactos.visible = false
 	panel_app_book.visible = false
-	panel_tecnicos.visible = false 
+	panel_tecnicos.visible = false
 	panel_seleccion_reel.visible = false # <--- OCULTAMOS SELECCION DE REEL
 	panel_seleccion_ensayo.visible = false
-	
+
 	generar_castings_del_dia()
 	recalcular_stats_pasivos()
 	_programar_siguiente_renta()
@@ -227,14 +229,14 @@ func publicar_auto(texto: String):
 
 func dibujar_feed_redes():
 	for hijo in contenedor_feed.get_children(): hijo.queue_free()
-	
+
 	if Datos.historial_posts.is_empty():
 		var lbl = Label.new()
 		lbl.text = "Aún no has publicado nada."
 		lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
 		contenedor_feed.add_child(lbl)
 		return
-		
+
 	for post in Datos.historial_posts:
 		var lbl = Label.new()
 		lbl.text = "Día " + str(post["dia"]) + " | Tú: \n" + post["mensaje"] + "\n---"
@@ -245,37 +247,37 @@ func dibujar_feed_redes():
 # --- 3. ACTUALIZACIÓN DE ESTADO ---
 func recalcular_stats_pasivos():
 	var nueva_energia_max = 3 + (Datos.habilidades_actor["expresion_corporal"] - 1)
-	
+
 	# --- BUFF: ACTOR FÍSICO ---
 	if obtener_arquetipo_dominante() == "fisico":
-		nueva_energia_max += 1 
-		
+		nueva_energia_max += 1
+
 	if nueva_energia_max > Datos.stats_actor["energia_maxima"]:
 		var diferencia = nueva_energia_max - Datos.stats_actor["energia_maxima"]
 		Datos.stats_actor["energia_maxima"] = nueva_energia_max
-		Datos.stats_actor["energia_actual"] += diferencia 
+		Datos.stats_actor["energia_actual"] += diferencia
 	var tamano_base = 40
 	zona_exito.size.x = tamano_base + (Datos.habilidades_actor["tecnica_vocal"] * 8)
-		
-	
+
+
 
 func actualizar_interfaz():
 	var cal = _calendario_desde_dia_abs(Datos.tiempo["dia"])
-	label_dia.text = str(cal["nombre_dia"]) + " " + str(cal["dia_mes"]) + " de " + str(cal["nombre_mes"]) + " (Día " + str(Datos.tiempo["dia"]) + ")"
+	label_dia.text = str(cal["nombre_dia"]) + " " + str(cal["dia_mes"]) + " de " + str(cal["nombre_mes"]) + " " + str(cal.get("anio", ANIO_BASE)) + " (Día " + str(Datos.tiempo["dia"]) + ")"
 	label_dinero.text = "Dinero: $" + str(Datos.economia["dinero"])
 	if Datos.economia["dinero"] < 0: label_dinero.modulate = Color(1.0, 0.2, 0.2)
 	else: label_dinero.modulate = Color(1.0, 1.0, 1.0)
-		
+
 	label_energia.text = "Energía: " + str(Datos.stats_actor["energia_actual"]) + "/" + str(Datos.stats_actor["energia_maxima"])
-	
+
 	label_estres.text = "Estrés: " + str(Datos.stats_actor["estres"]) + "/100"
 	if Datos.stats_actor["estres"] >= 80: label_estres.modulate = Color(1.0, 0.2, 0.2) # Rojo peligro
 	else: label_estres.modulate = Color(1.0, 1.0, 1.0)
-		
+
 	label_ego.text = "Ego: " + str(Datos.stats_actor["ego"]) + "/100"
 	if Datos.stats_actor["ego"] >= 60: label_ego.modulate = Color(1.0, 0.8, 0.2) # Dorado Divo
 	else: label_ego.modulate = Color(1.0, 1.0, 1.0)
-	
+
 	label_nivel.text = "Nivel: " + str(Datos.habilidades_actor["nivel_general"]) + " (XP: " + str(Datos.habilidades_actor["xp_actual"]) + "/" + str(Datos.habilidades_actor["xp_requerida"]) + ")"
 	# --- ACTUALIZAR TÍTULO DE ARQUETIPO ---
 	var arq = obtener_arquetipo_dominante()
@@ -304,38 +306,42 @@ func actualizar_interfaz():
 	else:
 		btn_trabajar.text = "Trabajar de Mesero (-2 E)"
 		btn_trabajar.disabled = false
-		
+
 	# --- LÓGICA ENSAYO CONTEXTUAL Y BARRA DE PROGRESO ---
 	var llaves_activas = Datos.proyectos_activos.keys()
 	llaves_activas.erase("temp")
-	
+
 	if llaves_activas.size() > 0:
 		var texto_medidor = "\n📋 PROYECTOS ACTIVOS:\n"
-		
+
 		for id_proy in llaves_activas:
 			var proy = Datos.proyectos_activos[id_proy]
 			var nombre = proy["titulo_unico"].split("\n")[1]
-			
+
 			var max_rend = float((proy["dias_de_trabajo"] - 1) + 2)
 			var actual = float(proy["rendimiento_acumulado"])
 			var porcentaje = clamp((actual / max_rend) * 100.0, 0.0, 100.0)
-			
+
 			var estrellas_est = clamp(int((actual / max_rend) * 5), 1, 5)
 			var txt_est = ""
 			for e in range(estrellas_est): txt_est += "⭐"
-			
+
 			texto_medidor += "🎬 " + nombre + "\n"
 			texto_medidor += "   Preparación: " + str(snapped(porcentaje, 1)) + "% (" + txt_est + ")\n"
-			
+			if proy.has("tipo_pago") and proy["tipo_pago"] == "taquilla":
+				var aforo_total = _aforo_maximo_proyecto(proy)
+				var boletos_estimados = _estimar_boletos_proyecto(proy, estrellas_est, aforo_total)
+				texto_medidor += "   🎟️ Boletos: " + str(boletos_estimados) + "/" + str(aforo_total) + " | Hype " + str(proy.get("hype_generado", 0)) + "\n"
+
 		label_proyectos.text = texto_medidor
 		label_proyectos.visible = true
-		
+
 		# Modificamos el botón de ensayar
 		if Datos.mazo_disponible.is_empty():
 			btn_ensayar.text = "Repasar Guiones 🔒 (Cero Cartas)"
 			btn_ensayar.disabled = true
 		else:
-			btn_ensayar.text = "Repasar Guiones (-1 E)"
+			btn_ensayar.text = "Repasar Guiones Casa (-1 E, tope 60%)"
 			btn_ensayar.disabled = false
 	else:
 		label_proyectos.visible = false
@@ -345,14 +351,14 @@ func actualizar_interfaz():
 		else:
 			btn_ensayar.text = "Ensayar Monólogo Libre (-1 E)"
 			btn_ensayar.disabled = false
-		
+
 	if ha_publicado_hoy:
 		btn_publicar_post.text = "Reel (Hecho hoy) 🔒"
 		btn_publicar_post.disabled = true
 	else:
 		btn_publicar_post.text = "Subir Reel (-1 E)"
 		btn_publicar_post.disabled = false
-		
+
 	if ha_ido_mixer_hoy:
 		btn_ir_networking.text = "Networking (Hecho hoy) 🔒"
 		btn_ir_networking.disabled = true
@@ -379,28 +385,51 @@ func actualizar_interfaz():
 			btn_llamado.visible = false; btn_trabajar.visible = true; btn_ensayar.visible = true
 	else:
 		btn_llamado.visible = false; btn_trabajar.visible = true; btn_ensayar.visible = true
-		
+
 	comprobar_bancarrota()
+
+func _es_bisiesto(anio: int) -> bool:
+	return (anio % 4 == 0 and anio % 100 != 0) or (anio % 400 == 0)
+
+func _dias_en_mes(anio: int, mes_idx: int) -> int:
+	if mes_idx == 1:
+		return 29 if _es_bisiesto(anio) else 28
+	if mes_idx in [3, 5, 8, 10]:
+		return 30
+	return 31
 
 func _calendario_desde_dia_abs(dia_abs: int) -> Dictionary:
 	var d = max(1, dia_abs)
+	var dias_restantes = d - 1
+	var anio = ANIO_BASE
+	var mes_idx = 0
+	while true:
+		var dias_mes = _dias_en_mes(anio, mes_idx)
+		if dias_restantes < dias_mes:
+			break
+		dias_restantes -= dias_mes
+		mes_idx += 1
+		if mes_idx >= 12:
+			mes_idx = 0
+			anio += 1
 	var dia_sem = int((d - 1) % 7)
-	var dia_mes = int((d - 1) % DIAS_POR_MES) + 1
-	var idx_mes = int(((d - 1) / DIAS_POR_MES) % NOMBRES_MESES.size())
-	var mes_num = int(((d - 1) / DIAS_POR_MES)) + 1
 	return {
 		"dia_semana": dia_sem,
 		"nombre_dia": NOMBRES_DIA_SEMANA[dia_sem],
-		"dia_mes": dia_mes,
-		"mes_idx": idx_mes,
-		"mes_num": mes_num,
-		"nombre_mes": NOMBRES_MESES[idx_mes]
+		"dia_mes": int(dias_restantes) + 1,
+		"mes_idx": mes_idx,
+		"mes_num": mes_idx + 1,
+		"nombre_mes": NOMBRES_MESES[mes_idx],
+		"anio": anio
 	}
 
+func _ultimo_dia_mes_desde(dia_abs: int) -> int:
+	var cal = _calendario_desde_dia_abs(dia_abs)
+	var faltan = _dias_en_mes(int(cal["anio"]), int(cal["mes_idx"])) - int(cal["dia_mes"])
+	return dia_abs + faltan
+
 func _programar_siguiente_renta():
-	var cal = _calendario_desde_dia_abs(Datos.tiempo["dia"])
-	var faltan = DIAS_POR_MES - int(cal["dia_mes"])
-	var proximo = Datos.tiempo["dia"] + faltan
+	var proximo = _ultimo_dia_mes_desde(Datos.tiempo["dia"])
 	for k in Datos.agenda.keys():
 		if Datos.agenda[k] == "Pago_Renta" and k != proximo:
 			Datos.agenda.erase(k)
@@ -411,8 +440,8 @@ func comprobar_bancarrota():
 		panel_game_over.visible = true
 
 func _on_btn_reiniciar_juego_pressed():
-	Datos.reiniciar_datos() 
-	get_tree().reload_current_scene() 
+	Datos.reiniciar_datos()
+	get_tree().reload_current_scene()
 
 func mostrar_alerta(titulo, mensaje, texto_boton="Aceptar"):
 	label_titulo_evento.text = titulo
@@ -424,7 +453,7 @@ func _on_btn_aceptar_evento_pressed():
 	panel_evento_matutino.visible = false
 	actualizar_interfaz()
 
-func _on_btn_info_stats_pressed(): 
+func _on_btn_info_stats_pressed():
 	panel_info_stats.visible = true
 	# Hacemos que la araña se actualice cada que abres la app
 	if is_instance_valid(grafico_arquetipo):
@@ -440,17 +469,17 @@ func iniciar_skill_check(tipo):
 
 	var costo_energia = 1
 	if tipo == "trabajo": costo_energia = 2
-	
+
 	if Datos.stats_actor["energia_actual"] >= costo_energia:
 		Datos.stats_actor["energia_actual"] -= costo_energia
 		tipo_rutina = tipo
 		panel_balasim.visible = true
-		
+
 		# --- 1. JEFES CONTEXTUALES Y EXIGENCIA DINÁMICA ---
 		var nombre_jefe = "Director General"
 		var base_exigencia = 10
-		rondas_restantes = 3 
-		
+		rondas_restantes = 3
+
 		if tipo == "trabajo":
 			casting_data_actual = {}
 			nombre_jefe = "Mesa 4: Cliente Problemático"
@@ -470,32 +499,32 @@ func iniciar_skill_check(tipo):
 			var nivel_req = casting_data_actual.get("nivel_minimo", 1)
 			var arq = casting_data_actual.get("arquetipo", "comercial")
 			var es_funcion = (tipo == "funcion")
-			
+
 			# ¡FÓRMULA INFINITA! Base 15 pts por cada nivel del casting
 			base_exigencia = (nivel_req * 15) + randi_range(10, 25)
-			
-			if es_funcion: 
+
+			if es_funcion:
 				base_exigencia = int(base_exigencia * 2.0)
 				# Te damos 1 ronda extra por cada 5 niveles para compensar batallas largas
-				rondas_restantes = 4 + int(nivel_req / 5.0) 
-			
+				rondas_restantes = 4 + int(nivel_req / 5.0)
+
 			exigencia_director = base_exigencia
 			# (El resto de nombres de jefes por arquetipo déjalos igual...)
 		elif tipo == "ensayo_cast" or tipo == "funcion":
 			var nivel_req = casting_data_actual.get("nivel_minimo", 1)
 			var arq = casting_data_actual.get("arquetipo", "comercial")
 			var es_funcion = (tipo == "funcion")
-			
+
 			if nivel_req == 1: base_exigencia = randi_range(15, 25)
 			elif nivel_req == 2: base_exigencia = randi_range(40, 60)
 			elif nivel_req >= 3: base_exigencia = randi_range(100, 150)
-			
-			if es_funcion: 
+
+			if es_funcion:
 				base_exigencia = int(base_exigencia * 2.5)
 				rondas_restantes = 4
-			
+
 			exigencia_director = base_exigencia
-			
+
 			if arq == "fisico":
 				if nivel_req == 1: nombre_jefe = "Niños de Fiesta Salvajes"
 				elif nivel_req == 2: nombre_jefe = "Coreógrafo Estricto"
@@ -514,13 +543,13 @@ func iniciar_skill_check(tipo):
 				nombre_jefe = "Público Exigente"
 
 		# --- 2. CONFIGURACIÓN DE BATALLA Y UI ---
-		poder_acumulado_turno = Datos.habilidades_actor["carisma"] * 2 
+		poder_acumulado_turno = Datos.habilidades_actor["carisma"] * 2
 		poder_total_encuentro = poder_acumulado_turno
 		resolviendo_balasim = false
 		btn_actuar.disabled = false
 		seleccion_actual_nodos.clear()
 		seleccion_actual_ids.clear()
-		max_cartas_jugables = 2 + int(Datos.habilidades_actor["expresion_corporal"] / 2) 
+		max_cartas_jugables = 2 + int(Datos.habilidades_actor["expresion_corporal"] / 2)
 		mulligans_restantes = 1 + int(Datos.habilidades_actor["nivel_general"] / 5)
 		# --- ESCALADO DE MEMORIA (RECURSOS DE BATALLA) ---
 		# Empiezas con 2 Mulligans base. Por cada 10 puntos de Memoria, ganas 1 extra.
@@ -532,17 +561,17 @@ func iniciar_skill_check(tipo):
 		var mi_arquetipo = obtener_arquetipo_dominante()
 		var nivel_arq = Datos.perfil_actor.get(mi_arquetipo, 0)
 		var robar_extra_instinto = 0
-		
+
 		if mi_arquetipo == "comercial":
 			var bono_fama = 10 + int(nivel_arq / 2.0)
 			poder_acumulado_turno += bono_fama
 			escribir_log_batalla("💸 Favoritismo (Comercial): Tu fama te precede. Empiezas con +" + str(bono_fama) + " Pts.")
-			
+
 		elif mi_arquetipo == "fisico":
 			var bono_mull = 1 + int(nivel_arq / 20.0)
 			mulligans_restantes += bono_mull
 			escribir_log_batalla("💪 Inagotable (Físico): Tu condición física te da +" + str(bono_mull) + " Redibujos extra.")
-			
+
 		elif mi_arquetipo == "instinto":
 			robar_extra_instinto = 1 + int(nivel_arq / 25.0)
 			escribir_log_batalla("⚡ Mente Rápida (Instinto): Robarás " + str(robar_extra_instinto) + " carta(s) extra este turno.")
@@ -554,7 +583,7 @@ func iniciar_skill_check(tipo):
 		actualizar_ui_balasim(nombre_jefe)
 		# 1. Repartimos la mano inicial normalmente
 		repartir_mano_balasim(true)
-		
+
 		# --- 👑 CASTIGO DE EGO (Pérdida de opciones) ---
 		var mi_ego = Datos.stats_actor.get("ego", 0)
 		if mi_ego >= 60:
@@ -566,15 +595,15 @@ func iniciar_skill_check(tipo):
 		# --- 💥 CASTIGO DE ESTRÉS (El Jefe huele tu miedo) ---
 		var mi_estres = Datos.stats_actor.get("estres", 0)
 		if mi_estres >= 50:
-			var cartas_panico_iniciales = int(mi_estres / 30.0) 
+			var cartas_panico_iniciales = int(mi_estres / 30.0)
 			escribir_log_batalla("💥 Mente Frágil: El estrés te sabotea desde el inicio.")
 			mostrar_texto_flotante("💥 Mente Frágil: Sabotaje Inicial", label_jefe, Color.PURPLE) # <--- NUEVO
-			
+
 			var llaves_peligro = ["nervios", "panico"]
 			for i in range(cartas_panico_iniciales):
 				inyectar_carta_peligro(llaves_peligro.pick_random())
-			
-		
+
+
 		# Aplicamos el poder de robo extra del Instinto
 		if robar_extra_instinto > 0:
 			for i in range(robar_extra_instinto):
@@ -582,7 +611,7 @@ func iniciar_skill_check(tipo):
 					var extra_id = Datos.mazo_disponible.pick_random()
 					crear_boton_carta_en_mesa(extra_id)
 					Datos.mazo_disponible.erase(extra_id)
-		
+
 		# --- GESTIÓN DEL LOG DE BATALLA ---
 		var vbox_log = null
 		if panel_balasim.has_node("CajaLogBatalla"):
@@ -597,20 +626,20 @@ func iniciar_skill_check(tipo):
 			panel_log.position = Vector2(10, 10)
 			panel_log.size = Vector2(300, 150)
 			panel_log.mouse_filter = Control.MOUSE_FILTER_IGNORE # Para que no bloquee clicks
-			
+
 			var scroll = ScrollContainer.new()
 			scroll.name = "ScrollContainer"
 			scroll.size = panel_log.size
 			scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-			
+
 			vbox_log = VBoxContainer.new()
 			vbox_log.name = "VBoxLog"
 			vbox_log.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			
+
 			scroll.add_child(vbox_log)
 			panel_log.add_child(scroll)
 			panel_balasim.add_child(panel_log)
-		
+
 		escribir_log_batalla("🎬 Inicia la prueba contra: " + nombre_jefe)
 	else:
 		mostrar_alerta("¡Exhausto!", "No tienes energía suficiente (" + str(costo_energia) + "E necesarias).")
@@ -619,16 +648,16 @@ func escribir_log_batalla(texto):
 	if not panel_balasim.has_node("CajaLogBatalla"): return
 	var vbox_log = panel_balasim.get_node("CajaLogBatalla").find_child("VBoxLog", true, false)
 	if not vbox_log: return
-	
+
 	var lbl = Label.new()
 	lbl.text = "> " + texto
 	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
 	lbl.add_theme_font_size_override("font_size", 12)
 	vbox_log.add_child(lbl)
-	
+
 	# Buscamos el ScrollContainer para bajar la barrita
 	var scroll = panel_balasim.get_node("CajaLogBatalla").find_child("ScrollContainer", true, false)
-	
+
 	# Auto-bajar el scroll con SEGURIDAD
 	if is_instance_valid(scroll):
 		await get_tree().process_frame
@@ -643,7 +672,7 @@ func actualizar_ui_balasim(nombre_jefe):
 			continue
 		if info_sel.has("efecto") and info_sel["efecto"] == "mas_jugadas":
 			limite_visual += info_sel.get("valor", 0)
-			
+
 	# --- NUEVO: PREVISUALIZACIÓN ---
 	var proyeccion = calcular_puntos_proyectados()
 	var texto_proyeccion = ""
@@ -658,38 +687,38 @@ func actualizar_ui_balasim(nombre_jefe):
 	btn_actuar.text = "🎭 ¡ACTUAR!" + texto_proyeccion
 	btn_mulligan.text = "🔄 Redibujar (" + str(mulligans_restantes) + " rest.)"
 
-func _on_boton_trabajar_pressed(): 
+func _on_boton_trabajar_pressed():
 	if not ha_trabajado_hoy:
 		if Datos.stats_actor["energia_actual"] >= 2:
 			Datos.stats_actor["energia_actual"] -= 2
 			tipo_rutina = "trabajo"
 			panel_rutina.visible = true
-			
+
 			label_titulo_rutina.text = "☕ ¡Mesa 4!\nDetén la barra en lo verde (Click o Espacio) para no tirar la charola."
-			
+
 			rutina_activa = true
 			# Entre más estrés tengas, más rápido tiembla tu pulso
-			cursor_velocidad = 300 + (Datos.stats_actor["estres"] * 4) 
+			cursor_velocidad = 300 + (Datos.stats_actor["estres"] * 4)
 		else:
 			mostrar_alerta("¡Exhausto!", "No tienes 2 de Energía para trabajar de mesero.")
 func _on_boton_ensayar_pressed():
 	if Datos.stats_actor["energia_actual"] < 1:
 		mostrar_alerta("¡Exhausto!", "No tienes energía para ensayar.")
 		return
-		
+
 	var llaves_activas = Datos.proyectos_activos.keys()
 	llaves_activas.erase("temp")
-	
+
 	if llaves_activas.size() > 0:
 		panel_seleccion_ensayo.visible = true
 		for hijo in contenedor_opciones_ensayo.get_children(): hijo.queue_free()
-		
+
 		# Opción 1: Monólogo (Solo XP, sin afectar proyectos)
 		var btn_mono = Button.new()
 		btn_mono.text = "🎭 Monólogo Libre (Solo XP)"
 		btn_mono.pressed.connect(iniciar_ensayo_seleccionado.bind(""))
 		contenedor_opciones_ensayo.add_child(btn_mono)
-		
+
 		# Opción 2: Los Proyectos Activos
 		for id_proy in llaves_activas:
 			var proy = Datos.proyectos_activos[id_proy]
@@ -707,9 +736,9 @@ func iniciar_ensayo_seleccionado(id_proy):
 	abrir_selector_carta_monologo()
 
 func abrir_selector_carta_monologo():
-	var opciones = Datos.mazo_disponible.duplicate()
+	var opciones = Datos.mazo_jugador.duplicate()
 	if opciones.is_empty():
-		mostrar_alerta("📭 Sin cartas", "No tienes cartas disponibles esta semana para entrenar.")
+		mostrar_alerta("📭 Sin cartas", "No tienes cartas en tu mazo para entrenar.")
 		return
 	var dialog = AcceptDialog.new()
 	dialog.title = "🧠 El Monólogo Interior"
@@ -724,7 +753,8 @@ func abrir_selector_carta_monologo():
 			continue
 		var btn = Button.new()
 		btn.autowrap_mode = TextServer.AUTOWRAP_WORD
-		btn.text = info.get("nombre", "Carta") + " | Niv " + str(Datos.obtener_nivel_carta(id_inst)) + " | Poder " + str(Datos.obtener_poder_carta(id_inst))
+		var agotada = not Datos.mazo_disponible.has(id_inst)
+		btn.text = info.get("nombre", "Carta") + " | Niv " + str(Datos.obtener_nivel_carta(id_inst)) + " | Poder " + str(Datos.obtener_poder_carta(id_inst)) + (" | AGOTADA" if agotada else "")
 		btn.pressed.connect(func(id_sel = id_inst):
 			carta_entrenando_id = id_sel
 			dialog.queue_free()
@@ -877,6 +907,8 @@ func finalizar_monologo_interior(fue_victoria: bool):
 	if fue_victoria:
 		bonus = 40
 	var xp_total = monologo_xp_recolectada + xp_por_tiempo + bonus
+	if bool(Datos.mejoras_simzon.get("set_utileria", false)):
+		xp_total = int(round(float(xp_total) * 1.2))
 	xp_total = int(clamp(xp_total, 12, 150))
 	var xp_actor = 0
 	var txt_carta = ""
@@ -897,6 +929,8 @@ func finalizar_monologo_interior(fue_victoria: bool):
 	mostrar_alerta("🧠 Monólogo Interior", t + "\nXP Carta: +" + str(xp_total) + txt_carta + "\nXP Personaje: +" + str(xp_actor))
 	comprobar_level_up()
 	actualizar_interfaz()
+	if panel_app_mazo.visible:
+		_on_btn_app_mazo_pressed()
 
 func _on_btn_cancelar_ensayo_pressed():
 	panel_seleccion_ensayo.visible = false
@@ -904,7 +938,7 @@ func _on_btn_cancelar_ensayo_pressed():
 func resolver_rutina_general(fue_exito):
 	rutina_activa = false
 	panel_rutina.visible = false
-	
+
 	# --- LÓGICA DE AUDICIÓN REAL (BALASIM) ---
 	if tipo_rutina == "casting_real":
 		if fue_exito:
@@ -912,7 +946,7 @@ func resolver_rutina_general(fue_exito):
 			var c = casting_data_actual
 			var id_unico = c["id_unico"]
 			Datos.proyectos_activos[id_unico] = c
-			
+
 			# Agendamos los días en el calendario
 			var dias_totales = c["dias_de_trabajo"]
 			for i in range(dias_totales):
@@ -921,7 +955,7 @@ func resolver_rutina_general(fue_exito):
 				elif i == dias_totales - 2 and dias_totales > 2: Datos.agenda[dia_agendado] = "Tecnico_" + id_unico
 				elif i == dias_totales - 1: Datos.agenda[dia_agendado] = "Grabacion_" + id_unico
 				else: Datos.agenda[dia_agendado] = "EnsayoCast_" + id_unico
-			
+
 			mostrar_alerta("✨ ¡CONTRATADO!", "Impresionaste al director. Estás dentro de: " + c["titulo_unico"].split("\n")[1])
 			publicar_auto("¡Me dieron el papel! El casting fue intenso pero valió la pena. 🎭🎬")
 			Datos.stats_actor["ego"] = clamp(Datos.stats_actor["ego"] + 10, 0, 100)
@@ -929,7 +963,7 @@ func resolver_rutina_general(fue_exito):
 			# DERROTA: El proyecto se pierde y sube el estrés
 			mostrar_alerta("❌ RECHAZADO", " 'Gracias por venir, nosotros te llamamos'. No lograste dar el perfil esta vez.")
 			Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] + 15, 0, 100)
-		
+
 		actualizar_interfaz()
 		return # Salimos para que no intente ejecutar lógica de "Trabajo" o "Ensayo"
 	elif tipo_rutina == "funcion":
@@ -968,7 +1002,7 @@ func resolver_rutina_general(fue_exito):
 				aforo_maximo = Datos.espacios_disponibles[Datos.mi_compania["id_espacio_actual"]]["capacidad_publico"]
 			var sin = _bonos_sinergia_espacio(c, aforo_maximo)
 			aforo_maximo = max(1, int(float(aforo_maximo) * float(sin.get("aforo_mult", 1.0))))
-			audiencia_final = base_aud + int(Datos.stats_actor["seguidores"] * 0.1) + c.get("hype_generado", 0) + int(Datos.lista_contactos.size() * 2)
+			audiencia_final = _estimar_boletos_proyecto(c, estrellas, aforo_maximo)
 			if c.get("estado_tecnicos") == "sabotaje":
 				audiencia_final = int(audiencia_final * 0.3)
 			elif estrellas <= 2:
@@ -1074,9 +1108,9 @@ func resolver_rutina_general(fue_exito):
 		ha_trabajado_hoy = true
 		Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] + 15, 0, 100) # +15 Estrés
 		if fue_exito:
-			var pago = randi_range(60, 90) 
-			if Datos.estado_actual == "suerte": pago += 30 
-			elif Datos.estado_actual == "torpe": pago -= 20 
+			var pago = randi_range(60, 90)
+			if Datos.estado_actual == "suerte": pago += 30
+			elif Datos.estado_actual == "torpe": pago -= 20
 			Datos.economia["dinero"] += pago
 			var hist = GestorTextos.obtener_texto("trabajo_exito")
 			mostrar_alerta(hist.titulo, hist.desc + "\n\nGanaste: $" + str(pago))
@@ -1085,27 +1119,34 @@ func resolver_rutina_general(fue_exito):
 			Datos.economia["dinero"] += pago
 			var hist = GestorTextos.obtener_texto("trabajo_fallo")
 			mostrar_alerta(hist.titulo, hist.desc + "\n\nGanaste solo: $" + str(pago))
-			
+
 	elif tipo_rutina == "ensayo_casa":
 		Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] + 5, 0, 100) # +5 Estrés
-		
+
 		var texto_extra = ""
-		
+
 		if proyecto_a_ensayar != "" and Datos.proyectos_activos.has(proyecto_a_ensayar):
 			var id_act = proyecto_a_ensayar
-			if fue_exito:
-				Datos.proyectos_activos[id_act]["rendimiento_acumulado"] += 0.5 
+			var proy_act = Datos.proyectos_activos[id_act]
+			var max_rend = float((int(proy_act.get("dias_de_trabajo", 1)) - 1) + 2)
+			var tope_casa = max_rend * 0.6
+			var delta = 0.5 if fue_exito else 0.1
+			var antes = float(proy_act.get("rendimiento_acumulado", 0.0))
+			var despues = min(tope_casa, antes + delta)
+			Datos.proyectos_activos[id_act]["rendimiento_acumulado"] = despues
+			if despues >= tope_casa and antes < tope_casa:
+				texto_extra = "\n\n🧱 Alcanzaste el tope de Ensayo en Casa (60%). Para 5⭐ debes asistir a llamados presenciales."
+			elif fue_exito:
 				texto_extra = "\n\n📈 Repasaste tu papel y mejoraste el rendimiento."
 			else:
-				Datos.proyectos_activos[id_act]["rendimiento_acumulado"] += 0.1 
 				texto_extra = "\n\n📉 Repasaste, pero te confundiste un poco con las líneas."
-				
+
 		# --- 🚨 ANTI-CRASH DE TEXTOS ---
 		if fue_exito:
 			var xp_ganada = 60
 			if Datos.estado_actual == "inspirado": xp_ganada *= 2; texto_extra += "\n✨ (XP Doble por Inspiración)"
 			Datos.habilidades_actor["xp_actual"] += xp_ganada
-			
+
 			var hist = GestorTextos.obtener_texto("ensayo_casa_exito")
 			var t_tit = "Ensayo Terminado"; var t_desc = "Repasaste tus líneas a la perfección."
 			if typeof(hist) == TYPE_DICTIONARY: t_tit = hist.get("titulo", t_tit); t_desc = hist.get("desc", t_desc)
@@ -1113,22 +1154,22 @@ func resolver_rutina_general(fue_exito):
 		else:
 			var xp_ganada = 20
 			Datos.habilidades_actor["xp_actual"] += xp_ganada
-			
+
 			var hist = GestorTextos.obtener_texto("ensayo_casa_fallo")
 			var t_tit = "Ensayo Mediocre"; var t_desc = "Te distrajiste mucho, pero algo aprendiste."
 			if typeof(hist) == TYPE_DICTIONARY: t_tit = hist.get("titulo", t_tit); t_desc = hist.get("desc", t_desc)
 			mostrar_alerta(t_tit, t_desc + "\n\nGanaste: +" + str(xp_ganada) + " XP" + texto_extra)
-			
+
 	elif tipo_rutina == "ensayo_cast":
-		Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] + 10, 0, 100) 
+		Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] + 10, 0, 100)
 		var titulo_obra = casting_data_actual["titulo_unico"].split("\n")[1]
-		
+
 		if fue_exito:
 			var xp_ganada = 90
 			if Datos.estado_actual == "inspirado": xp_ganada *= 2
 			Datos.habilidades_actor["xp_actual"] += xp_ganada
-			casting_data_actual["rendimiento_acumulado"] += 1 
-			
+			casting_data_actual["rendimiento_acumulado"] += 1
+
 			var hist = GestorTextos.obtener_texto("ensayo_cast_exito")
 			var t_tit = "Buen Ensayo"; var t_desc = "El director amó tu propuesta."
 			if typeof(hist) == TYPE_DICTIONARY: t_tit = hist.get("titulo", t_tit); t_desc = hist.get("desc", t_desc)
@@ -1136,13 +1177,13 @@ func resolver_rutina_general(fue_exito):
 			publicar_auto("Trabajando duro en el set de '" + titulo_obra + "'. Dando el 100%. ✨")
 		else:
 			Datos.habilidades_actor["xp_actual"] += 30
-			
+
 			var hist = GestorTextos.obtener_texto("ensayo_cast_fallo")
 			var t_tit = "Día Difícil"; var t_desc = "El director te gritó todo el ensayo."
 			if typeof(hist) == TYPE_DICTIONARY: t_tit = hist.get("titulo", t_tit); t_desc = hist.get("desc", t_desc)
 			mostrar_alerta(t_tit, t_desc + "\n\nGanaste: +30 XP")
 			publicar_auto("Días difíciles trabajando en '" + titulo_obra + "'. A repasar guion. 📖")
-			
+
 		Datos.agenda.erase(Datos.tiempo["dia"])
 		# --- 🌟 PODER FINAL DEL MÉTODO (VAMPIRISMO DE ESTRÉS) ---
 	var mi_arq_final = obtener_arquetipo_dominante()
@@ -1158,24 +1199,24 @@ func resolver_rutina_general(fue_exito):
 func _on_btn_llamado_pressed():
 	var dia_hoy = Datos.tiempo["dia"]
 	var evento_hoy = Datos.agenda[dia_hoy]
-	
+
 	if evento_hoy.begins_with("Lectura_") or evento_hoy.begins_with("Tecnico_") or evento_hoy.begins_with("EnsayoCast_"):
 		# Separamos el tipo de evento del ID usando split
-		var partes = evento_hoy.split("_", false, 1) 
+		var partes = evento_hoy.split("_", false, 1)
 		var tipo = partes[0] # Ej: "Lectura"
 		var id_unico = partes[1]
-		
+
 		casting_data_actual = Datos.proyectos_activos[id_unico]
 		iniciar_skill_check("ensayo_cast")
-		
+
 		# Personalizamos el título del minijuego según el tipo
 		if tipo == "Lectura": label_titulo_rutina.text = "¡Lectura de Mesa!\nSigue el tono del Director."
 		elif tipo == "Tecnico": label_titulo_rutina.text = "¡Ensayo Técnico!\nEncuentra tus marcas de luz."
-		
+
 	elif evento_hoy.begins_with("Grabacion_"):
 		var id_unico = evento_hoy.replace("Grabacion_", "")
 		casting_data_actual = Datos.proyectos_activos[id_unico]
-		
+
 		# Si la obra es tuya, pagas técnicos. Si no, vas directo a la batalla final.
 		if casting_data_actual.has("es_propia"):
 			panel_tecnicos.visible = true
@@ -1219,6 +1260,46 @@ func _bonos_sinergia_espacio(c: Dictionary, aforo_maximo: int) -> Dictionary:
 			out["hype_extra"] = int(out["hype_extra"]) + 50
 	return out
 
+
+func _aforo_maximo_proyecto(c: Dictionary) -> int:
+	var aforo_maximo = 1000
+	if c.has("es_propia"):
+		aforo_maximo = int(Datos.espacios_disponibles[Datos.mi_compania["id_espacio_actual"]]["capacidad_publico"])
+	var sin = _bonos_sinergia_espacio(c, aforo_maximo)
+	return max(1, int(float(aforo_maximo) * float(sin.get("aforo_mult", 1.0))))
+
+func _estimar_boletos_proyecto(c: Dictionary, estrellas_estimadas: int = 3, aforo_total: int = -1) -> int:
+	if aforo_total <= 0:
+		aforo_total = _aforo_maximo_proyecto(c)
+	var base_aud = int(c.get("importancia", 1)) * 20
+	if c.has("es_propia"):
+		base_aud += int(c.get("influencia_equipo", 0)) * 3
+	var seguidores = int(Datos.stats_actor.get("seguidores", 0))
+	var hype = int(c.get("hype_generado", 0))
+	var promo_calidad = 1.0 + clamp(float(Datos.habilidades_actor.get("carisma", 1)) * 0.05, 0.0, 0.4)
+	if bool(Datos.mejoras_simzon.get("aro_luz", false)):
+		promo_calidad *= 1.15
+	var produccion_nivel = clamp(0.75 + (float(estrellas_estimadas) * 0.1), 0.75, 1.35)
+	var hype_total = int((hype + int(float(seguidores) * 0.1) + int(Datos.lista_contactos.size() * 2)) * promo_calidad)
+	var boletos = int((base_aud + hype_total) * produccion_nivel)
+	return clamp(boletos, 0, aforo_total)
+
+func _estado_contrato_renta() -> Dictionary:
+	var c = Datos.mi_compania.get("contrato_renta", {"id_espacio": "sala_casa", "vence_dia": -1})
+	if typeof(c) != TYPE_DICTIONARY:
+		return {"id_espacio": "sala_casa", "vence_dia": -1}
+	if not c.has("id_espacio"):
+		c["id_espacio"] = "sala_casa"
+	if not c.has("vence_dia"):
+		c["vence_dia"] = -1
+	return c
+
+func _renta_vigente_para_espacio(id_espacio: String) -> bool:
+	if _espacio_es_propietario(id_espacio):
+		return true
+	var contrato = _estado_contrato_renta()
+	return str(contrato.get("id_espacio", "")) == id_espacio and int(contrato.get("vence_dia", -1)) >= int(Datos.tiempo.get("dia", 1))
+
 func _tiene_mejora_local(id_espacio: String, clave: String) -> bool:
 	if not Datos.mi_compania.has("mejoras_locales"):
 		return false
@@ -1249,17 +1330,25 @@ func _procesar_fin_dia():
 		mostrar_alerta("¡FALTA GRAVE!", "No fuiste a tu llamado. El director está furioso.")
 		reducir_seguidores(10)
 		publicar_auto("Cometí un error terrible en el trabajo hoy. Solo quiero dormir y desaparecer. 😞")
-		
+
 	# Chequeo de colapso mental antes de dormir
 	if Datos.stats_actor["estres"] >= 100:
 		aplicar_burnout()
-		
+
 	# Descanso natural (Baja el estrés pasivamente si no colapsaste)
 	Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] - 10, 0, 100)
+	if bool(Datos.mejoras_simzon.get("suscripcion_meditacion", false)):
+		Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] - 5, 0, 100)
 	ha_trabajado_hoy = false; ha_publicado_hoy = false; ha_ido_mixer_hoy = false
 	cafes_tomados_hoy = 0 # El sueño resetea tu tolerancia a la cafeína
 	Datos.estado_actual = "normal"
 	Datos.tiempo["dia"] += 1
+	var contrato = _estado_contrato_renta()
+	if int(contrato.get("vence_dia", -1)) > 0 and int(contrato.get("vence_dia", -1)) < int(Datos.tiempo["dia"]):
+		if str(Datos.mi_compania.get("id_espacio_actual", "sala_casa")) == str(contrato.get("id_espacio", "")) and not _espacio_es_propietario(str(contrato.get("id_espacio", ""))):
+			Datos.mi_compania["id_espacio_actual"] = "sala_casa"
+			mostrar_alerta("⛔ Contrato Vencido", "Tu renta expiró. Los formatos que requieren aforo alto quedarán bloqueados hasta renovar.")
+		Datos.mi_compania["contrato_renta"] = {"id_espacio": "sala_casa", "vence_dia": -1}
 	actualizar_temporada_si_aplica()
 	_actualizar_afinidad_contactos_fin_dia()
 	if Datos.mi_compania.has("espacios_propios") and not _hay_produccion_propia_activa():
@@ -1275,30 +1364,30 @@ func _procesar_fin_dia():
 		var costo_mant = max(120, int(esp.get("renta_mensual", 100)) * 2)
 		Datos.economia["dinero"] -= costo_mant
 		mostrar_alerta("🛠️ Mantenimiento", "Se dañó " + str(esp.get("nombre", "tu espacio")) + ". Pagaste -$" + str(costo_mant) + " en reparaciones.")
-	
+
 	# --- REINICIO SEMANAL DE CARTAS ---
 	if Datos.tiempo["dia"] % 7 == 1: # Si es día 8, 15, 22, 29...
 		Datos.mazo_disponible = Datos.mazo_jugador.duplicate()
 		mostrar_alerta("🗓️ Inicio de Semana", "¡Has descansado y recuperado la inspiración!\nTodas las cartas que usaste la semana pasada han vuelto a tu Mazo Disponible.")
-		
+
 	# Actualizamos tu energía usando tu propia función base
 	recalcular_stats_pasivos()
 	Datos.stats_actor["energia_actual"] = Datos.stats_actor["energia_maxima"]
-	
+
 	# ==========================================
 	# 📦 CREACIÓN DEL MENSAJE MATUTINO
 	# ==========================================
 	var mensaje_matutino = ""
-	
+
 	# --- COSTO DE ESTILO DE VIDA ---
 	# Empieza en $15, pero sube $5 por cada nivel que tengas
 	var costo_vida = 8 + (Datos.habilidades_actor["nivel_general"] * 3)
 	Datos.economia["dinero"] -= costo_vida
-	
+
 	# Le avisamos al jugador si le cobraron mucho
 	if Datos.habilidades_actor["nivel_general"] >= 5:
-		mensaje_matutino += "Costo de Vida (Nivel " + str(Datos.habilidades_actor["nivel_general"]) + "): -$" + str(costo_vida) + "\n\n" 
-	
+		mensaje_matutino += "Costo de Vida (Nivel " + str(Datos.habilidades_actor["nivel_general"]) + "): -$" + str(costo_vida) + "\n\n"
+
 	# --- ALERTA BANCARIA (Si estás en números rojos) ---
 	if Datos.economia["dinero"] < 0:
 		var interes = int(abs(Datos.economia["dinero"]) * 0.08)
@@ -1308,33 +1397,33 @@ func _procesar_fin_dia():
 		Datos.economia["dinero"] -= interes
 		mensaje_matutino += "⚠️ ALERTA BANCARIA:\nEl banco te cobró -$" + str(interes) + " por intereses.\n"
 	# ==========================================
-	
+
 	var ingresos_redes = 0
 	if Datos.stats_actor["seguidores"] >= 100:
-		ingresos_redes = int(Datos.stats_actor["seguidores"] / 10) 
+		ingresos_redes = int(Datos.stats_actor["seguidores"] / 10)
 		Datos.economia["dinero"] += ingresos_redes
-	
+
 	generar_castings_del_dia()
 	generar_mercado_diario()
-	
+
 	var dia_nuevo = Datos.tiempo["dia"]
 	var cal_nuevo = _calendario_desde_dia_abs(dia_nuevo)
-	if dia_nuevo > 1 and int(cal_nuevo["dia_mes"]) == DIAS_POR_MES:
+	if dia_nuevo > 1 and dia_nuevo == _ultimo_dia_mes_desde(dia_nuevo):
 		# ¡NUEVA LÓGICA DE RENTA DOBLE!
 		var espacio_id = Datos.mi_compania["id_espacio_actual"]
 		var renta_espacio = Datos.espacios_disponibles[espacio_id]["renta_mensual"]
 		if _espacio_es_propietario(espacio_id):
 			renta_espacio = 0
 		var renta_total = 300 + renta_espacio
-		
+
 		var texto_renta = "Desglose de Renta Mensual:\n"
 		texto_renta += "🏠 Departamento: -$300\n"
 		texto_renta += "🏢 Local (" + Datos.espacios_disponibles[espacio_id]["nombre"] + "): -$" + str(renta_espacio) + "\n"
 		texto_renta += "TOTAL PAGADO: -$" + str(renta_total) + "\n"
-		
+
 		if ingresos_redes > 0: texto_renta += "\n📱 Redes Sociales: +$" + str(ingresos_redes) + " hoy."
 		if mensaje_matutino != "": texto_renta += "\n\n" + mensaje_matutino
-		
+
 		Datos.economia["dinero"] -= renta_total
 		mostrar_alerta("Día de Renta", texto_renta)
 		if Datos.agenda.has(Datos.tiempo["dia"]) and Datos.agenda[Datos.tiempo["dia"]] == "Pago_Renta":
@@ -1343,7 +1432,7 @@ func _procesar_fin_dia():
 	else:
 		# --- EVENTOS DINÁMICOS POR EGO Y ESTRÉS ---
 		var evento_disparado = false
-		
+
 		if Datos.stats_actor["estres"] >= 80 and randi_range(1, 100) <= 50:
 			mostrar_alerta("🤒 Enfermedad por Estrés", "Tus defensas bajaron por tanta presión. Tienes fiebre y tuviste que comprar medicinas.\n\nPerdiste -$40 y amaneces con solo 1 de Energía.")
 			Datos.economia["dinero"] -= 40
@@ -1362,36 +1451,36 @@ func _procesar_fin_dia():
 			Datos.economia["dinero"] -= 80
 			sumar_seguidores(10)
 			evento_disparado = true
-			
+
 		if not evento_disparado:
-			if mensaje_matutino != "": mostrar_alerta("Buzón de Cobro", mensaje_matutino) 
+			if mensaje_matutino != "": mostrar_alerta("Buzón de Cobro", mensaje_matutino)
 			elif randi_range(1, 100) <= 30: disparar_evento_aleatorio()
 			elif ingresos_redes > 0: mostrar_alerta("💸 Monetización SimGram", "Ganaste: +$" + str(ingresos_redes))
 		_programar_siguiente_renta()
-	
+
 	actualizar_interfaz()
-	
+
 	# --- AUTO-GUARDADO AL FINALIZAR EL DÍA ---
 	Datos.guardar_partida()
 	mostrar_alerta("💤 Día Finalizado", "Has descansado. Tu progreso ha sido guardado automáticamente.")
-	
+
 func comprobar_level_up():
 	var subio_nivel = false
-	
+
 	if Datos.habilidades_actor.get("xp_requerida", 0) <= 10:
 		Datos.habilidades_actor["xp_requerida"] = 100
-		
+
 	# 🚨 SOLUCIÓN NUCLEAR: Máximo 50 vueltas de subida de nivel por golpe
 	for i in range(50):
 		if Datos.habilidades_actor["xp_actual"] < Datos.habilidades_actor["xp_requerida"]:
 			break
 
-		Datos.habilidades_actor["xp_actual"] -= Datos.habilidades_actor["xp_requerida"] 
+		Datos.habilidades_actor["xp_actual"] -= Datos.habilidades_actor["xp_requerida"]
 		Datos.habilidades_actor["nivel_general"] += 1
-		Datos.habilidades_actor["xp_requerida"] = int(Datos.habilidades_actor["xp_requerida"] * 1.4) 
+		Datos.habilidades_actor["xp_requerida"] = int(Datos.habilidades_actor["xp_requerida"] * 1.4)
 		subio_nivel = true
-		
-	if subio_nivel: 
+
+	if subio_nivel:
 		panel_level_up.visible = true
 
 func aplicar_stat_y_cerrar():
@@ -1413,25 +1502,53 @@ func _on_btn_app_agenda_pressed():
 	panel_app_agenda.visible = true
 	for hijo in grid_calendario.get_children(): hijo.queue_free()
 	var dia_actual = Datos.tiempo["dia"]
-	var bloque_mes = int((dia_actual - 1) / DIAS_POR_MES) * DIAS_POR_MES 
-	var dia_inicio = bloque_mes + 1
-	for i in range(dia_inicio, dia_inicio + DIAS_POR_MES):
-		var btn_dia = Button.new() 
+	var cal_ref = _calendario_desde_dia_abs(dia_actual)
+	var dia_inicio = dia_actual - int(cal_ref["dia_mes"]) + 1
+	var dias_mes_actual = _dias_en_mes(int(cal_ref["anio"]), int(cal_ref["mes_idx"]))
+	for i in range(dia_inicio, dia_inicio + dias_mes_actual):
+		var btn_dia = Button.new()
 		var cal = _calendario_desde_dia_abs(i)
 		btn_dia.text = str(cal["nombre_dia"]).substr(0, 3) + "\n" + str(cal["dia_mes"])
 		btn_dia.custom_minimum_size = Vector2(45, 45)
-		if i < dia_actual: btn_dia.modulate = Color(0.4, 0.4, 0.4) 
-		elif i == dia_actual: btn_dia.modulate = Color(1.0, 0.9, 0.2) 
-		elif Datos.agenda.has(i): 
+		if i < dia_actual: btn_dia.modulate = Color(0.4, 0.4, 0.4)
+		elif i == dia_actual: btn_dia.modulate = Color(1.0, 0.9, 0.2)
+		elif Datos.agenda.has(i):
 			var evento = str(Datos.agenda[i])
 			if evento == "Pago_Renta":
 				btn_dia.text += "\nR$"
 				btn_dia.modulate = Color(1.0, 0.45, 0.45)
 			else:
-				btn_dia.text += "\n!" 
-				btn_dia.modulate = Color(0.2, 0.8, 0.2) 
-		else: btn_dia.modulate = Color(1, 1, 1) 
+				btn_dia.text += "\n!"
+				btn_dia.modulate = Color(0.2, 0.8, 0.2)
+		else: btn_dia.modulate = Color(1, 1, 1)
+		btn_dia.pressed.connect(_mostrar_detalle_calendario.bind(i))
 		grid_calendario.add_child(btn_dia)
+
+func _mostrar_detalle_calendario(dia_abs: int):
+	if not Datos.agenda.has(dia_abs):
+		mostrar_alerta("📅 Día libre", "No hay eventos programados en este día.")
+		return
+	var evento = str(Datos.agenda[dia_abs])
+	var cal = _calendario_desde_dia_abs(dia_abs)
+	var fecha = str(cal["nombre_dia"]) + " " + str(cal["dia_mes"]) + " de " + str(cal["nombre_mes"])
+	if evento == "Pago_Renta":
+		var espacio_id = str(Datos.mi_compania.get("id_espacio_actual", "sala_casa"))
+		var renta_espacio = int(Datos.espacios_disponibles[espacio_id].get("renta_mensual", 0))
+		if _espacio_es_propietario(espacio_id):
+			renta_espacio = 0
+		var monto = 300 + renta_espacio
+		mostrar_alerta("🧾 Detalle de Agenda", fecha + "\nEvento: Pago de Renta\nMonto a debitar: -$" + str(monto))
+		return
+	var tipo = "Evento"
+	if evento.begins_with("Lectura_"): tipo = "Lectura"
+	elif evento.begins_with("Tecnico_"): tipo = "Técnico"
+	elif evento.begins_with("Grabacion_"): tipo = "Función"
+	elif evento.begins_with("EnsayoCast_"): tipo = "Ensayo General"
+	var id_proy = evento.get_slice("_", 1)
+	var nombre = id_proy
+	if Datos.proyectos_activos.has(id_proy):
+		nombre = str(Datos.proyectos_activos[id_proy].get("titulo_unico", id_proy)).split("\n")[-1]
+	mostrar_alerta("🧾 Detalle de Agenda", fecha + "\nEvento: " + tipo + "\nProyecto: " + nombre)
 
 func _on_btn_volver_inicio_pressed():
 	panel_app_agenda.visible = false
@@ -1646,7 +1763,7 @@ func generar_castings_del_dia():
 	var progreso = _factor_progreso_global_core()
 	var mi_nivel = Datos.habilidades_actor["nivel_general"]
 	var tier_max = _tier_maximo_por_nivel_core(mi_nivel)
-	
+
 	var por_tier = {1: [], 2: [], 3: []}
 	for id_c in todas_las_llaves:
 		var base = Datos.castings_disponibles[id_c]
@@ -1662,7 +1779,7 @@ func generar_castings_del_dia():
 		plan_tiers.append(clamp(tier_max + randi_range(-1, 0), 1, 3))
 	else:
 		plan_tiers.append(1)
-	
+
 	var usados_ids = []
 	for i in range(plan_tiers.size()):
 		var tier_obj = plan_tiers[i]
@@ -1684,7 +1801,7 @@ func generar_castings_del_dia():
 		var min_rel = max(rango_tier.x, min(mi_nivel + tier - 2, rango_tier.y))
 		var max_rel = clamp(mi_nivel + tier, min_rel, rango_tier.y + int(progreso))
 		var nivel_generado = randi_range(min_rel, max_rel)
-		
+
 		base_casting["nivel_minimo"] = nivel_generado
 		var perfil = _perfil_escalado_casting_core(id_base, base_casting, progreso)
 		base_casting["seguidores_minimos"] = int(perfil["seguidores_minimos"])
@@ -1714,9 +1831,9 @@ func generar_castings_del_dia():
 		elif mutador == "sponsors_agresivos":
 			base_casting["paga"] = int(base_casting["paga"] * 1.3)
 			base_casting["penalidad_fracaso"] += 6
-		
+
 		var titulo_especifico = GestorTextos.generar_titulo_produccion(id_base)
-		base_casting["papel"] = GestorTextos.generar_papel_produccion(id_base) 
+		base_casting["papel"] = GestorTextos.generar_papel_produccion(id_base)
 		base_casting["titulo_unico"] = base_casting["titulo"] + " [Nv." + str(nivel_generado) + "]\n" + titulo_especifico
 		base_casting["id_unico"] = id_base + "_dia" + str(Datos.tiempo["dia"]) + "_" + str(i)
 		base_casting["rendimiento_acumulado"] = 0
@@ -1726,13 +1843,13 @@ func generar_castings_del_dia():
 			base_casting["book_req"] = {"tier3_4est": 2, "sold_outs": 1}
 		elif nivel_generado >= 5 and tier >= 2:
 			base_casting["book_req"] = {"tier3_4est": 1, "sold_outs": 0}
-		
+
 		if "corto" in id_base or "pelicula" in id_base or "drama" in id_base: base_casting["arquetipo"] = "metodo"
 		elif "extra" in id_base or "accion" in id_base or "danza" in id_base: base_casting["arquetipo"] = "fisico"
 		elif "teatro" in id_base or "obra" in id_base or "doblaje" in id_base or "locutor" in id_base: base_casting["arquetipo"] = "forma"
 		elif "comercial" in id_base or "conduccion" in id_base: base_casting["arquetipo"] = "comercial"
 		elif "standup" in id_base or "animador" in id_base or "impro" in id_base: base_casting["arquetipo"] = "instinto"
-		else: base_casting["arquetipo"] = "comercial" 
+		else: base_casting["arquetipo"] = "comercial"
 
 		castings_de_hoy.append(base_casting)
 
@@ -1746,17 +1863,17 @@ func _on_btn_app_castings_pressed():
 	contenedor_menu_inicio.visible = false
 	panel_app_castings.visible = true
 	for hijo in contenedor_lista_castings.get_children(): hijo.queue_free()
-	
+
 	for index in range(castings_de_hoy.size()):
 		var casting = castings_de_hoy[index]
 		var btn_trabajo = Button.new()
-		
+
 		var texto_boton = casting["titulo_unico"] + "\n"
-		texto_boton += "🎭 Papel: " + casting.get("papel", "Actor") + "\n" 
+		texto_boton += "🎭 Papel: " + casting.get("papel", "Actor") + "\n"
 		texto_boton += "🏷️ Tier " + str(casting.get("importancia", 1)) + " | Dificultad " + str(snapped(float(casting.get("dificultad", 1.0)), 0.1)) + "\n"
 		texto_boton += "Pide: Nvl " + str(casting["nivel_minimo"]) + " | " + str(casting["seguidores_minimos"]) + " Seg.\n"
 		texto_boton += "🏁 Temporada: " + Datos.objetivos_temporada[Datos.temporada_actual.get("objetivo_id", "prestigio")]["nombre"] + "\n"
-		
+
 		var arq = casting.get("arquetipo", "comercial")
 		var fuerte = ""; var debil = ""
 		if arq == "metodo": fuerte = "Instinto"; debil = "Comercial"
@@ -1765,29 +1882,29 @@ func _on_btn_app_castings_pressed():
 		elif arq == "forma": fuerte = "Físico"; debil = "Instinto"
 		elif arq == "instinto": fuerte = "Forma"; debil = "Método"
 		texto_boton += "🧠 Jefe: " + arq.capitalize() + " (Usa " + fuerte + " | Evita " + debil + ")\n"
-		
+
 		texto_boton += "🎁 Recompensas Base: +" + str(casting.get("recompensa_xp", 0)) + " XP\n"
 		var contrato = casting.get("contrato", {})
 		if not contrato.is_empty():
 			texto_boton += "📜 Contrato: " + contrato.get("nombre", "Estándar") + " | Riesgo: " + str(casting.get("volatilidad", 0)) + "%\n"
-		
+
 		if casting.has("tipo_pago") and casting["tipo_pago"] == "taquilla": texto_boton += "💸 Pago: % Taquilla\n"
 		else: texto_boton += "💰 Pago Fijo: $" + str(casting.get("paga", 0)) + "\n"
 		var val_book = _validar_requisitos_book_core(casting)
 		if not val_book["ok"]:
 			texto_boton += "📖 REQUISITO BOOK: " + str(val_book["faltan"]) + "\n"
-			
-		if casting["dias_de_trabajo"] > 1: 
+
+		if casting["dias_de_trabajo"] > 1:
 			texto_boton += "Ensayos: " + str(casting["dias_de_trabajo"] - 1) + " | Función: 1"
-		else: 
+		else:
 			texto_boton += "Función: 1"
-		
+
 		btn_trabajo.text = texto_boton
-		
+
 		# --- 🪄 AQUÍ ESTÁ LA MAGIA PARA DESAPLASTARLOS ---
 		btn_trabajo.custom_minimum_size = Vector2(0, 180) # Altura forzada para que quepa todo
 		btn_trabajo.autowrap_mode = TextServer.AUTOWRAP_WORD # Evita que el texto rompa los bordes
-		
+
 		# --- LÓGICA DE BLOQUEO DE DUPLICADOS ---
 		if Datos.proyectos_activos.has(casting["id_unico"]):
 			btn_trabajo.text = "[ YA FIRMADO ]\n" + btn_trabajo.text
@@ -1799,7 +1916,7 @@ func _on_btn_app_castings_pressed():
 			btn_trabajo.modulate = Color(0.35, 0.35, 0.35)
 		else:
 			btn_trabajo.pressed.connect(abrir_confirmacion_casting.bind(index))
-			
+
 		contenedor_lista_castings.add_child(btn_trabajo)
 
 func _on_btn_volver_inicio_castings_pressed():
@@ -1816,19 +1933,19 @@ func abrir_confirmacion_casting(index):
 	if Datos.habilidades_actor.get("nivel_general", 1) < int(c.get("nivel_minimo", 1)):
 		mostrar_alerta("Nivel insuficiente", "Este casting exige nivel " + str(c.get("nivel_minimo", 1)) + " y actualmente eres nivel " + str(Datos.habilidades_actor.get("nivel_general", 1)) + ".")
 		return
-	
+
 	if Datos.stats_actor["seguidores"] < c["seguidores_minimos"]:
 		mostrar_alerta("🎬 Perfil Insuficiente", "Necesitas tener al menos " + str(c["seguidores_minimos"]) + " Seguidores para audicionar.")
-		return 
-		
+		return
+
 	# --- LÓGICA DE EGO (LA DIVA) ---
 	if Datos.stats_actor["ego"] >= 60 and c.get("importancia", 1) == 1:
 		mostrar_alerta("💅 Demasiado Famoso", "Tu Ego está por las nubes (" + str(Datos.stats_actor["ego"]) + "/100).\nTe niegas rotundamente a rebajarte a hacer proyectos de Nivel 1.")
 		return
-		
+
 	Datos.proyectos_activos["temp"] = c
 	panel_confirmacion.visible = true
-	
+
 	# Reiniciamos la negociación y dibujamos el calendario
 	desplazamiento_fechas = 0
 	actualizar_calendario_negociacion()
@@ -1840,10 +1957,10 @@ func _on_btn_confirmar_casting_pressed():
 	panel_app_castings.visible = false
 	panel_simphone.visible = false
 	contenedor_menu_inicio.visible = true
-	
+
 	# Guardamos el casting que estamos peleando en la variable del motor
 	casting_data_actual = Datos.proyectos_activos["temp"]
-	
+
 	# Lanzamos el BALASIM con el tipo especial: "casting_real"
 	iniciar_skill_check("casting_real")
 
@@ -1851,7 +1968,7 @@ func _on_btn_confirmar_casting_pressed():
 func sumar_seguidores(cantidad):
 	Datos.stats_actor["seguidores"] += cantidad
 	for i in range(cantidad):
-		if i > 10: break 
+		if i > 10: break
 		var nuevo_user = GestorTextos.generar_usuario_aleatorio()
 		Datos.ultimos_seguidores.push_front(nuevo_user)
 	if Datos.ultimos_seguidores.size() > 10:
@@ -1900,30 +2017,30 @@ func _on_btn_publicar_post_pressed():
 		# Abrimos el panel de selección en lugar de gastar energía de inmediato
 		panel_seleccion_reel.visible = true
 		for hijo in contenedor_opciones_reel.get_children(): hijo.queue_free()
-		
+
 		# 1. Opción de Reel Personal (Siempre disponible)
 		var btn_personal = Button.new()
 		btn_personal.text = "✨ Reel Personal (Tendencias / Comedia)"
 		btn_personal.pressed.connect(publicar_reel_seleccionado.bind("personal"))
 		contenedor_opciones_reel.add_child(btn_personal)
-		
+
 		# 2. Opciones de Proyectos Activos (Si tienes alguno)
 		var llaves_activas = Datos.proyectos_activos.keys()
 		llaves_activas.erase("temp") # Ignorar el proyecto en negociación
-		
+
 		for id_proy in llaves_activas:
 			var proy = Datos.proyectos_activos[id_proy]
 			var nom = proy["titulo_unico"].split("\n")[1]
 			var btn_proy = Button.new()
-			
+
 			if proy.has("tipo_pago") and proy["tipo_pago"] == "taquilla":
 				btn_proy.text = "🎟️ Promocionar Obra: " + nom + " (Genera Hype)"
 			else:
 				btn_proy.text = "🎥 Foto en el Set: " + nom + " (Genera Seguidores)"
-				
+
 			btn_proy.pressed.connect(publicar_reel_seleccionado.bind(id_proy))
 			contenedor_opciones_reel.add_child(btn_proy)
-			
+
 	else:
 		mostrar_alerta("¡Exhausto!", "No tienes energía.")
 
@@ -2236,12 +2353,12 @@ func _on_btn_ir_networking_pressed():
 		Datos.stats_actor["energia_actual"] -= 2
 		Datos.economia["dinero"] -= 20
 		ha_ido_mixer_hoy = true
-		
+
 		var seguidores_actuales = Datos.stats_actor["seguidores"]
 		var suerte = randi_range(1, 100)
-		
+
 		if seguidores_actuales <= 50:
-			if suerte <= 40: 
+			if suerte <= 40:
 				var hist = GestorTextos.obtener_texto("networking_inicio_fracaso")
 				mostrar_alerta(hist.titulo, hist.desc + "\n\nGastaste $20 y no lograste nada.")
 				publicar_auto("A veces las fiestas son muy superficiales. Cero conexiones hoy.")
@@ -2255,7 +2372,7 @@ func _on_btn_ir_networking_pressed():
 				mostrar_alerta(hist.titulo, hist.desc + "\n\nObtuviste la tarjeta de:\n⭐ " + nuevo_contacto["nombre"] + " (" + nuevo_contacto["rol"] + ")\n" + "Habilidad: " + str(nuevo_contacto.get("habilidad", "")) + "\n" + str(nuevo_contacto.get("habilidad_desc", "")))
 				publicar_auto("Conocí gente increíble en el Mixer de hoy. Abriendo puertas 🏙️")
 		else:
-			if suerte <= 20: 
+			if suerte <= 20:
 				var hist = GestorTextos.obtener_texto("networking_fama_fracaso")
 				mostrar_alerta(hist.titulo, hist.desc + "\n\nGastaste $20 y no lograste nada.")
 				publicar_auto("Demasiado acoso en el evento de hoy. Hay que respetar el espacio.")
@@ -2269,7 +2386,7 @@ func _on_btn_ir_networking_pressed():
 				var hist = GestorTextos.obtener_texto("networking_fama_exito")
 				mostrar_alerta(hist.titulo, hist.desc + "\n\nObtuviste la tarjeta de:\n⭐ " + nuevo_contacto["nombre"] + " (" + nuevo_contacto["rol"] + ")\n" + "Habilidad: " + str(nuevo_contacto.get("habilidad", "")) + "\n" + str(nuevo_contacto.get("habilidad_desc", "")))
 				publicar_auto("Noche de networking con los grandes. Se vienen colaboraciones 🥂✨")
-			
+
 		actualizar_metricas_redes()
 		comprobar_hitos_redes()
 		actualizar_interfaz()
@@ -2280,7 +2397,7 @@ func _on_btn_app_contactos_pressed():
 	contenedor_menu_inicio.visible = false
 	panel_app_contactos.visible = true
 	for hijo in contenedor_lista_contactos.get_children(): hijo.queue_free()
-	
+
 	if Datos.lista_contactos.is_empty():
 		var label_vacio = Label.new()
 		label_vacio.text = "Tu libreta está vacía. Ve a Mixers."
@@ -2301,7 +2418,7 @@ func _on_btn_app_contactos_pressed():
 			if c["categoria"] == "Local": panel.modulate = Color(0.8, 0.8, 0.8)
 			elif c["categoria"] == "Indie": panel.modulate = Color(0.4, 0.8, 1.0)
 			elif c["categoria"] == "Profesional": panel.modulate = Color(1.0, 0.8, 0.2)
-			
+
 			var lbl = Label.new()
 			var estado = "🟢 Equipado" if bool(c.get("activo", false)) else "⚪ En libreta"
 			lbl.text = "👤 " + str(c.get("nombre", "Sin nombre")) + "\n"
@@ -2314,7 +2431,7 @@ func _on_btn_app_contactos_pressed():
 			btn_toggle.text = "Desequipar" if bool(c.get("activo", false)) else "Equipar"
 			btn_toggle.pressed.connect(alternar_contacto_activo.bind(i))
 			panel.add_child(btn_toggle)
-			
+
 			contenedor_lista_contactos.add_child(panel)
 
 func otorgar_agente_por_contacto_mixer(contacto: Dictionary):
@@ -2380,17 +2497,110 @@ func _on_btn_volver_inicio_book_pressed():
 func _on_btn_app_tienda_pressed():
 	contenedor_menu_inicio.visible = false
 	panel_app_tienda.visible = true
+	_configurar_tienda_simzon_extra()
 
 func _on_btn_volver_inicio_tienda_pressed():
 	panel_app_tienda.visible = false
 	contenedor_menu_inicio.visible = true
 
+func _configurar_tienda_simzon_extra():
+	if simzon_extra_creado:
+		return
+	simzon_extra_creado = true
+	var items = [
+		{"txt": "Toro Rojo ($25) [+1 Energía, +10 Estrés]", "fn": Callable(self, "_comprar_toro_rojo")},
+		{"txt": "Té de Manzanilla Premium ($20) [-15 Estrés]", "fn": Callable(self, "_comprar_te_manzanilla")},
+		{"txt": "Aro de Luz Profesional ($480) [Pasivo +15% Reel]", "fn": Callable(self, "_comprar_aro_luz")},
+		{"txt": "Campaña Ads SimGram ($120) [+80 Boletos al proyecto actual]", "fn": Callable(self, "_comprar_ads_simgram")},
+		{"txt": "Suscripción App Meditación ($350) [Pasivo -5 Estrés/noche]", "fn": Callable(self, "_comprar_suscripcion_meditacion")},
+		{"txt": "Set de Utilería para Casa ($300) [Pasivo +20% XP Monólogo]", "fn": Callable(self, "_comprar_set_utileria")},
+		{"txt": "Micrófono de Solapa Inalámbrico ($900) [+1 Técnica Vocal]", "fn": Callable(self, "_comprar_microfono_solapa")}
+	]
+	for d in items:
+		var b = Button.new()
+		b.text = str(d["txt"])
+		b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		b.pressed.connect(d["fn"])
+		contenedor_tienda.add_child(b)
+
+func _comprar_toro_rojo():
+	if Datos.economia["dinero"] < 25:
+		mostrar_alerta("Sin dinero", "Necesitas $25.")
+		return
+	Datos.economia["dinero"] -= 25
+	Datos.stats_actor["energia_actual"] = min(Datos.stats_actor["energia_maxima"], Datos.stats_actor["energia_actual"] + 1)
+	Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] + 10, 0, 100)
+	actualizar_interfaz()
+
+func _comprar_te_manzanilla():
+	if Datos.economia["dinero"] < 20:
+		mostrar_alerta("Sin dinero", "Necesitas $20.")
+		return
+	Datos.economia["dinero"] -= 20
+	Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] - 15, 0, 100)
+	actualizar_interfaz()
+
+func _comprar_aro_luz():
+	if bool(Datos.mejoras_simzon.get("aro_luz", false)):
+		mostrar_alerta("Ya comprado", "Ya tienes Aro de Luz.")
+		return
+	if Datos.economia["dinero"] < 480:
+		mostrar_alerta("Sin dinero", "Necesitas $480.")
+		return
+	Datos.economia["dinero"] -= 480; Datos.mejoras_simzon["aro_luz"] = true; actualizar_interfaz()
+
+func _comprar_ads_simgram():
+	if Datos.economia["dinero"] < 120:
+		mostrar_alerta("Sin dinero", "Necesitas $120.")
+		return
+	var id_obj = ""
+	for id_p in Datos.proyectos_activos.keys():
+		if Datos.proyectos_activos[id_p].get("tipo_pago", "") == "taquilla":
+			id_obj = id_p
+			break
+	if id_obj == "":
+		mostrar_alerta("Sin objetivo", "No tienes producción de taquilla activa.")
+		return
+	Datos.economia["dinero"] -= 120
+	Datos.proyectos_activos[id_obj]["hype_generado"] = int(Datos.proyectos_activos[id_obj].get("hype_generado", 0)) + 80
+	actualizar_interfaz()
+
+func _comprar_suscripcion_meditacion():
+	if bool(Datos.mejoras_simzon.get("suscripcion_meditacion", false)):
+		mostrar_alerta("Ya activo", "Ya tienes suscripción activa.")
+		return
+	if Datos.economia["dinero"] < 350:
+		mostrar_alerta("Sin dinero", "Necesitas $350.")
+		return
+	Datos.economia["dinero"] -= 350; Datos.mejoras_simzon["suscripcion_meditacion"] = true; actualizar_interfaz()
+
+func _comprar_set_utileria():
+	if bool(Datos.mejoras_simzon.get("set_utileria", false)):
+		mostrar_alerta("Ya comprado", "Ya tienes el set.")
+		return
+	if Datos.economia["dinero"] < 300:
+		mostrar_alerta("Sin dinero", "Necesitas $300.")
+		return
+	Datos.economia["dinero"] -= 300; Datos.mejoras_simzon["set_utileria"] = true; actualizar_interfaz()
+
+func _comprar_microfono_solapa():
+	if bool(Datos.mejoras_simzon.get("microfono_solapa", false)):
+		mostrar_alerta("Ya comprado", "Ya tienes micrófono.")
+		return
+	if Datos.economia["dinero"] < 900:
+		mostrar_alerta("Sin dinero", "Necesitas $900.")
+		return
+	Datos.economia["dinero"] -= 900
+	Datos.mejoras_simzon["microfono_solapa"] = true
+	Datos.habilidades_actor["tecnica_vocal"] += 1
+	aplicar_stat_y_cerrar()
+
 func _on_btn_comprar_cafe_pressed():
-	var limite_cafes = 2 + int(Datos.habilidades_actor["nivel_general"] / 3) 
+	var limite_cafes = 2 + int(Datos.habilidades_actor["nivel_general"] / 3)
 	if cafes_tomados_hoy >= limite_cafes:
 		mostrar_alerta("¡Taquicardia!", "Ya tomaste demasiado café por hoy. Te tiemblan las manos. Ve a dormir.")
 		return
-		
+
 	if Datos.economia["dinero"] >= 15:
 		if Datos.stats_actor["energia_actual"] < Datos.stats_actor["energia_maxima"]:
 			Datos.economia["dinero"] -= 15
@@ -2416,34 +2626,34 @@ func _on_btn_comprar_traje_pressed():
 		Datos.economia["dinero"] -= 500
 		Datos.habilidades_actor["carisma"] += 1
 		mostrar_alerta("👔 ¡Nuevo Look!", "Te ves increíble.\nGanaste +1 Carisma Permanente.")
-		aplicar_stat_y_cerrar() 
+		aplicar_stat_y_cerrar()
 	else: mostrar_alerta("Sin Dinero", "No te alcanza.")
 
 # --- EVENTOS MATUTINOS ---
 func disparar_evento_aleatorio():
 	var lista_eventos = Datos.eventos_matutinos.keys()
 	var evento_elegido = lista_eventos[randi() % lista_eventos.size()]
-	
+
 	# --- LÓGICA DE EVENTOS CONDICIONADOS POR ESTRÉS/EGO ---
 	# Si tienes mucho estrés, forzamos que salga el evento de Insomnio frecuentemente
 	if Datos.stats_actor["estres"] >= 60 and randi_range(1, 100) <= 60:
-		evento_elegido = "insomnio" 
-		
+		evento_elegido = "insomnio"
+
 	# Si tu ego es muy alto, te vas de fiesta por creerte superior
 	elif Datos.stats_actor["ego"] >= 60 and randi_range(1, 100) <= 60:
 		evento_elegido = "resaca"
-		
+
 	var datos_evento = Datos.eventos_matutinos[evento_elegido]
 	Datos.stats_actor["energia_actual"] += datos_evento["efecto_energia"]
 	Datos.economia["dinero"] += datos_evento["efecto_dinero"]
 	Datos.stats_actor["seguidores"] += datos_evento["efecto_seguidores"]
 	Datos.estado_actual = datos_evento["estado_dia"]
-	
+
 	var aviso_extra = ""
 	if Datos.estado_actual == "inspirado": aviso_extra = "\n\n✨ ESTADO: Inspirado (Doble XP hoy)."
 	elif Datos.estado_actual == "torpe": aviso_extra = "\n\n🥀 ESTADO: Torpe (Menos propinas hoy)."
 	elif Datos.estado_actual == "viral": aviso_extra = "\n\n🔥 ESTADO: Viral (Ganas doble seguidores hoy)."
-	
+
 	mostrar_alerta("🌅 " + datos_evento["titulo"], datos_evento["descripcion"] + aviso_extra)
 	comprobar_hitos_redes()
 
@@ -2451,39 +2661,39 @@ func disparar_evento_aleatorio():
 func iniciar_minijuego_memoria(id_unico):
 	casting_data_actual = Datos.proyectos_activos[id_unico]
 	var casting = casting_data_actual
-	
+
 	if Datos.stats_actor["energia_actual"] > 0: Datos.stats_actor["energia_actual"] -= 1
 	panel_minijuego.visible = true
 	label_titulo_trabajo.text = "🎬 Grabando:\n" + casting["titulo_unico"].split("\n")[1]
-	
+
 	var guion = lineas_guion.pick_random()
 	respuesta_correcta = guion["correcta"]
 	var opciones = [guion["correcta"], guion["incorrectas"][0], guion["incorrectas"][1]]
-	opciones.shuffle() 
+	opciones.shuffle()
 	btn_opcion_1.text = opciones[0]
 	btn_opcion_2.text = opciones[1]
 	btn_opcion_3.text = opciones[2]
 	var nivel_dificultad = casting["dificultad"]
-	var tiempo_lectura = 4.0 - nivel_dificultad 
-	var tiempo_respuesta_base = 4.0 - (nivel_dificultad * 0.5) 
+	var tiempo_lectura = 4.0 - nivel_dificultad
+	var tiempo_respuesta_base = 4.0 - (nivel_dificultad * 0.5)
 	label_tiempo.text = "¡MEMORIZA!"
-	label_guion.text = guion["texto"].replace("[___]", respuesta_correcta.to_upper()) 
+	label_guion.text = guion["texto"].replace("[___]", respuesta_correcta.to_upper())
 	btn_opcion_1.visible = false; btn_opcion_2.visible = false; btn_opcion_3.visible = false
-	await get_tree().create_timer(tiempo_lectura).timeout 
-	label_guion.text = guion["texto"] 
+	await get_tree().create_timer(tiempo_lectura).timeout
+	label_guion.text = guion["texto"]
 	btn_opcion_1.visible = true; btn_opcion_2.visible = true; btn_opcion_3.visible = true
 	tiempo_restante = tiempo_respuesta_base + (Datos.habilidades_actor["memoria"] * 1.5)
-	
+
 	# --- BUFF: ACTOR INSTINTIVO ---
 	if obtener_arquetipo_dominante() == "instinto":
 		tiempo_restante += 2.0 # Improvista excelente bajo presión
-		
+
 	label_tiempo.text = "⏳ Acción: %.1f s" % tiempo_restante
-	timer_minijuego.wait_time = 0.1 
+	timer_minijuego.wait_time = 0.1
 	timer_minijuego.start()
 
 func _on_timer_minijuego_timeout():
-	tiempo_restante -= 0.1 
+	tiempo_restante -= 0.1
 	label_tiempo.text = "⏳ Acción: %.1f s" % tiempo_restante
 	if tiempo_restante <= 0.01:
 		timer_minijuego.stop()
@@ -2498,13 +2708,13 @@ func evaluar_respuesta(texto_elegido):
 	panel_minijuego.visible = false
 	var c = casting_data_actual
 	var nombre_proyecto = c["titulo_unico"].split("\n")[1]
-	
+
 	var arq_dom = obtener_arquetipo_dominante() # Leemos tu perfil ANTES de dar recompensas
 
-	if texto_elegido == respuesta_correcta: c["rendimiento_acumulado"] += 2 
+	if texto_elegido == respuesta_correcta: c["rendimiento_acumulado"] += 2
 	var max_rendimiento = (c["dias_de_trabajo"] - 1) + 2
 	var calificacion = float(c["rendimiento_acumulado"]) / float(max_rendimiento)
-	var estrellas = clamp(int(calificacion * 5), 1, 5) 
+	var estrellas = clamp(int(calificacion * 5), 1, 5)
 
 	# --- SUBIDA DE PUNTOS DE ARQUETIPO (ADN) ---
 	if estrellas >= 3:
@@ -2519,29 +2729,29 @@ func evaluar_respuesta(texto_elegido):
 				c["estado_tecnicos"] = "normal"
 				alerta_sabotaje = "🛡️ Tu profesionalismo clásico (Actor de Forma) impidió el sabotaje.\n\n"
 			else:
-				estrellas = 1 
+				estrellas = 1
 				alerta_sabotaje = "🚨 SABOTAJE: Los técnicos apagaron las luces y te arruinaron.\n\n"
 		elif c["estado_tecnicos"] == "excelente":
-			estrellas = clamp(estrellas + 1, 1, 5) 
+			estrellas = clamp(estrellas + 1, 1, 5)
 
 	var ganancia_final = 0; var audiencia_final = 0
 
 	if c.has("tipo_pago") and c["tipo_pago"] == "taquilla":
 		var base_aud = c.get("importancia", 1) * 20
-		var aforo_maximo = 1000 
-		if c.has("es_propia"): 
-			base_aud += (c["influencia_equipo"] * 3) 
+		var aforo_maximo = 1000
+		if c.has("es_propia"):
+			base_aud += (c["influencia_equipo"] * 3)
 			aforo_maximo = Datos.espacios_disponibles[Datos.mi_compania["id_espacio_actual"]]["capacidad_publico"]
-			
-		audiencia_final = base_aud + int(Datos.stats_actor["seguidores"] * 0.1) + c.get("hype_generado", 0) + int(Datos.lista_contactos.size() * 2)
-		
+
+		audiencia_final = _estimar_boletos_proyecto(c, estrellas, aforo_maximo)
+
 		if c.get("estado_tecnicos") == "sabotaje": audiencia_final = int(audiencia_final * 0.3)
-		elif estrellas <= 2: audiencia_final = int(audiencia_final * 0.5) 
-		
+		elif estrellas <= 2: audiencia_final = int(audiencia_final * 0.5)
+
 		if audiencia_final >= aforo_maximo:
 			audiencia_final = aforo_maximo
-			c["hubo_sold_out"] = true 
-		
+			c["hubo_sold_out"] = true
+
 		var sin_ticket = _bonos_sinergia_espacio(c, aforo_maximo)
 		var corte = int(float(c.get("corte_boleto", 5)) * float(sin_ticket.get("ticket_mult", 1.0)))
 		var ganancia_bruta = audiencia_final * corte
@@ -2549,27 +2759,27 @@ func evaluar_respuesta(texto_elegido):
 		else: ganancia_final = ganancia_bruta
 	else:
 		ganancia_final = c.get("paga", 0)
-		if estrellas <= 2: ganancia_final = int(ganancia_final / 2.0) 
+		if estrellas <= 2: ganancia_final = int(ganancia_final / 2.0)
 
 	# --- MATEMÁTICA DE BUFFS Y DEBUFFS DE RECOMPENSA ---
 	var multi_dinero = 1.0
 	var multi_xp = 1.0
 	var multi_seg = 1.0
 	var multi_ego = 1
-	
-	if arq_dom == "comercial": 
+
+	if arq_dom == "comercial":
 		multi_dinero = 1.5
 		multi_ego = 2 # Divo inestable
-	elif arq_dom == "fisico": 
+	elif arq_dom == "fisico":
 		multi_dinero = 0.8
-	
-	if arq_dom == "metodo": 
+
+	if arq_dom == "metodo":
 		multi_xp = 1.5
 		Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] + 15, 0, 100) # Penalty mental
-	elif arq_dom == "instinto": 
+	elif arq_dom == "instinto":
 		multi_xp = 0.5
-		
-	if arq_dom == "forma": 
+
+	if arq_dom == "forma":
 		multi_seg = 0.5
 
 	ganancia_final = int(ganancia_final * multi_dinero)
@@ -2595,33 +2805,33 @@ func evaluar_respuesta(texto_elegido):
 
 	# --- CONSECUENCIAS (CON MULTIPLICADOR DE EGO) ---
 	if c.get("estado_tecnicos") == "sabotaje":
-		Datos.stats_actor["ego"] = clamp(Datos.stats_actor["ego"] - (15 * multi_ego), 0, 100) 
+		Datos.stats_actor["ego"] = clamp(Datos.stats_actor["ego"] - (15 * multi_ego), 0, 100)
 		mostrar_alerta("🍅 Humillación Técnica", alerta_sabotaje + "Crítica: " + str(estrellas) + "⭐\nGanancias: $" + str(ganancia_final))
 		publicar_auto("Peor día de mi vida. Nunca hagan enojar a los técnicos de iluminación. 😭")
 	elif estrellas >= 4:
 		var titulo_alerta = "🏆 Gran Estreno"
 		var txt = alerta_sabotaje + "¡Un éxito rotundo!\nCrítica: " + str(estrellas) + "⭐\n"
 		if c.has("hubo_sold_out"):
-			Datos.stats_actor["ego"] = clamp(Datos.stats_actor["ego"] + (20 * multi_ego), 0, 100) 
+			Datos.stats_actor["ego"] = clamp(Datos.stats_actor["ego"] + (20 * multi_ego), 0, 100)
 			titulo_alerta = "🔥 ¡SOLD OUT ABSOLUTO! 🔥"
 			txt += "Taquilla: " + str(audiencia_final) + " (¡LLENO TOTAL!)\n"
 			publicar_auto("¡HICIMOS SOLD OUT! No cabía un alfiler para ver '" + nombre_proyecto + "'. Los amo. 😭🎫")
-		elif audiencia_final > 0: 
-			Datos.stats_actor["ego"] = clamp(Datos.stats_actor["ego"] + (5 * multi_ego), 0, 100) 
+		elif audiencia_final > 0:
+			Datos.stats_actor["ego"] = clamp(Datos.stats_actor["ego"] + (5 * multi_ego), 0, 100)
 			txt += "Taquilla: " + str(audiencia_final) + " personas\n"
 			publicar_auto("Las críticas a '" + nombre_proyecto + "' son hermosas. Gracias a todos. ⭐⭐⭐⭐⭐")
 		else:
 			Datos.stats_actor["ego"] = clamp(Datos.stats_actor["ego"] + (2 * multi_ego), 0, 100)
-			
+
 		mostrar_alerta(titulo_alerta, txt + "Ganancias: $" + str(ganancia_final))
 	else:
-		Datos.stats_actor["ego"] = clamp(Datos.stats_actor["ego"] - (5 * multi_ego), 0, 100) 
-		
-		var multiplicador_fracaso = (3 - estrellas) 
+		Datos.stats_actor["ego"] = clamp(Datos.stats_actor["ego"] - (5 * multi_ego), 0, 100)
+
+		var multiplicador_fracaso = (3 - estrellas)
 		var fans_perdidos = c.get("importancia", 1) * 15 * multiplicador_fracaso
 		fans_perdidos += c.get("penalidad_fracaso", 0)
 		reducir_seguidores(fans_perdidos)
-		
+
 		mostrar_alerta("🍅 Fracaso en Crítica", "Un desastre absoluto.\nTu mala actuación fue comentada en redes.\n\nCrítica: " + str(estrellas) + "⭐\nGanancias: $" + str(ganancia_final) + "\nSeguidores Perdidos: -" + str(fans_perdidos))
 		publicar_auto("A veces las cosas no salen como uno quiere. Gracias a los que apoyaron el intento. Pasemos la página. 💔")
 
@@ -2643,24 +2853,28 @@ func _on_btn_volver_inicio_inmobiliaria_pressed():
 func actualizar_lista_espacios():
 	for hijo in contenedor_lista_espacios.get_children():
 		hijo.queue_free()
-	
+
 	var espacio_actual = Datos.mi_compania["id_espacio_actual"]
-	
+
 	for id_espacio in Datos.espacios_disponibles.keys():
 		var espacio = Datos.espacios_disponibles[id_espacio]
 		var btn = Button.new()
-		
+
 		var txt = "🏢 " + espacio["nombre"] + "\n"
 		txt += "Renta: $" + str(espacio["renta_mensual"]) + "/mes | Compra: $" + str(espacio.get("precio_compra", int(espacio["renta_mensual"]) * 15)) + "\n"
 		txt += "Permite Contactos: " + espacio["nivel_max_contactos"] + " | Aforo Público: " + str(espacio.get("capacidad_publico", 0))
+		var contrato = _estado_contrato_renta()
+		if not _espacio_es_propietario(id_espacio) and str(contrato.get("id_espacio", "")) == id_espacio:
+			var dias_rest = int(contrato.get("vence_dia", -1)) - int(Datos.tiempo.get("dia", 1))
+			txt += " | Días Restantes Renta: " + str(max(0, dias_rest))
 		btn.text = txt
-		
+
 		if id_espacio == espacio_actual:
 			btn.text += "\n[ ESPACIO ACTUAL ]"
 			btn.modulate = Color(0.5, 1.0, 0.5) # Verde para saber que es tuyo
 		# Se usa .bind() para pasarle qué espacio queremos gestionar al hacer clic
 		btn.pressed.connect(mostrar_menu_espacio.bind(id_espacio))
-			
+
 		contenedor_lista_espacios.add_child(btn)
 
 func mostrar_menu_espacio(id_espacio):
@@ -2701,6 +2915,8 @@ func _accion_espacio(id_espacio: String, accion: String):
 			if not Datos.mi_compania["espacios_propios"].has(id_espacio):
 				Datos.mi_compania["espacios_propios"].append(id_espacio)
 			Datos.mi_compania["id_espacio_actual"] = id_espacio
+			if str(_estado_contrato_renta().get("id_espacio", "")) == id_espacio:
+				Datos.mi_compania["contrato_renta"] = {"id_espacio": "sala_casa", "vence_dia": -1}
 			mostrar_alerta("🏗️ Compra de Propiedad", "Compraste " + str(espacio["nombre"]) + " por -$" + str(costo_compra) + ".")
 		else:
 			mostrar_alerta("❌ Fondos Insuficientes", "Necesitas $" + str(costo_compra) + " para comprar.")
@@ -2708,7 +2924,8 @@ func _accion_espacio(id_espacio: String, accion: String):
 		if Datos.economia["dinero"] >= costo_renta:
 			Datos.economia["dinero"] -= costo_renta
 			Datos.mi_compania["id_espacio_actual"] = id_espacio
-			mostrar_alerta("📦 Mudanza Exitosa", "Has rentado: " + espacio["nombre"] + "\nPagaste -$" + str(costo_renta) + " por depósito + primer mes.")
+			Datos.mi_compania["contrato_renta"] = {"id_espacio": id_espacio, "vence_dia": Datos.tiempo["dia"] + 30}
+			mostrar_alerta("📦 Mudanza Exitosa", "Has rentado: " + espacio["nombre"] + "\nPagaste -$" + str(costo_renta) + " por depósito + primer mes.\nContrato vigente por 30 días.")
 		else:
 			mostrar_alerta("❌ Fondos Insuficientes", "Necesitas $" + str(costo_renta) + " para rentar.")
 	actualizar_interfaz()
@@ -2774,6 +2991,7 @@ func _on_btn_app_productora_pressed():
 		var guionista = _buscar_mejor_contacto_activo_por_rol("Guionista")
 		var productor = _buscar_mejor_contacto_activo_por_rol("Productor")
 		var aforo_ok = int(espacio_actual.get("capacidad_publico", 0)) >= int(formato.get("aforo_minimo", 0))
+		var renta_ok = _renta_vigente_para_espacio(str(Datos.mi_compania.get("id_espacio_actual", "sala_casa")))
 		var tier_minimo = 1
 		if id_formato == "obra_reparto": tier_minimo = 1
 		elif id_formato == "cortometraje_indie": tier_minimo = 2
@@ -2789,6 +3007,9 @@ func _on_btn_app_productora_pressed():
 			btn.disabled = true
 		elif not aforo_ok and bool(formato.get("requiere_taquilla", true)):
 			txt += "\n❌ Incapacidad de Foro: tu espacio no cumple aforo."
+			btn.disabled = true
+		elif not renta_ok and bool(formato.get("requiere_taquilla", true)):
+			txt += "\n⛔ Contrato vencido: renueva la renta del local para producir formatos de taquilla."
 			btn.disabled = true
 		else:
 			var trato = _trato_productor(productor)
@@ -2820,6 +3041,9 @@ func lanzar_produccion_propia(id_formato, director, guionista, productor):
 	elif id_formato == "musical_gran_formato": tier_minimo = 3
 	if tier_empresa < tier_minimo:
 		mostrar_alerta("Tier insuficiente", "Necesitas Tier " + str(tier_minimo) + " de compañía para este formato.")
+		return
+	if bool(formato.get("requiere_taquilla", true)) and not _renta_vigente_para_espacio(str(Datos.mi_compania.get("id_espacio_actual", "sala_casa"))):
+		mostrar_alerta("Contrato vencido", "No puedes montar este formato sin renta vigente en el local actual.")
 		return
 	var trato = _trato_productor(productor)
 	var aporte = int(float(formato["costo_montaje"]) * float(trato.get("aporte", 0.0)))
@@ -2918,7 +3142,7 @@ func _on_btn_tec_nada_pressed():
 		casting_data_actual["estado_tecnicos"] = "sabotaje"
 	else:
 		casting_data_actual["estado_tecnicos"] = "normal" # Tuviste suerte, no hicieron nada
-		
+
 	panel_tecnicos.visible = false
 	iniciar_skill_check("funcion")
 
@@ -2947,7 +3171,7 @@ func actualizar_calendario_negociacion():
 	var c = Datos.proyectos_activos["temp"]
 	var dia_actual = Datos.tiempo["dia"]
 	var dia_arranque_propuesto = dia_actual + 1 + desplazamiento_fechas
-	
+
 	# --- REQUISITO DE "ESTRELLA" PARA NEGOCIAR ---
 	if Datos.habilidades_actor["carisma"] < 3:
 		btn_negociar_fechas.text = "🔒 Negociar (Pide Nvl. 3 Carisma)"
@@ -2959,27 +3183,27 @@ func actualizar_calendario_negociacion():
 		var costo_negociar = int(round(base * (1.0 - descuento)))
 		btn_negociar_fechas.text = "📅 Negociar Fechas (+1 Día) -$" + str(costo_negociar)
 		btn_negociar_fechas.disabled = Datos.economia["dinero"] < costo_negociar
-	
+
 	# 1. Calculamos las fechas que tomará este proyecto
 	dias_propuestos_temp.clear()
 	for i in range(c["dias_de_trabajo"]):
 		dias_propuestos_temp.append(dia_arranque_propuesto + (i * 2)) # Un día sí, un día no
-		
+
 	# 2. Verificamos si hay choques con la agenda existente
 	var hay_choque = false
 	for d in dias_propuestos_temp:
 		if Datos.agenda.has(d):
 			hay_choque = true
-	
+
 	# 3. Actualizamos los textos informativos
 	var info = "¿Firmar contrato para:\n" + c["titulo_unico"] + "?\n\n"
 	info += "🎭 Personaje: " + c["papel"] + "\n"
-	
+
 	if c.has("tipo_pago") and c["tipo_pago"] == "taquilla":
 		info += "⚠️ Tu pago dependerá del HYPE y público que atraigas.\n"
 	else:
 		info += "💰 Pago Final Fijo: $" + str(c.get("paga", 0)) + "\n"
-		
+
 	if hay_choque:
 		if Datos.habilidades_actor["carisma"] < 3:
 			info += "\n❌ CHOQUE DE AGENDA. Como eres novato (Carisma < 3), no puedes exigir que te muevan las fechas. Debes rechazar el papel."
@@ -2989,19 +3213,19 @@ func actualizar_calendario_negociacion():
 	else:
 		info += "\n✅ Fechas Libres. Puedes firmar."
 		btn_confirmar_casting.disabled = false
-		
+
 	label_detalles_casting.text = info
-	
+
 	# 4. Dibujamos el Mini-Calendario visual (Los próximos 21 días)
 	for hijo in grid_calendario_confirmacion.get_children():
 		hijo.queue_free()
-	
+
 	for i in range(dia_actual, dia_actual + 21):
 		var btn = Button.new()
 		btn.text = str(i)
 		btn.custom_minimum_size = Vector2(30, 30)
 		btn.disabled = true # Solo es visual
-		
+
 		# Lógica de colores del calendario de negociación
 		if i == dia_actual:
 			btn.modulate = Color(1.0, 0.9, 0.2) # Amarillo: Hoy
@@ -3014,27 +3238,27 @@ func actualizar_calendario_negociacion():
 			btn.modulate = Color(0.4, 0.6, 1.0) # AZUL: Tienes otra cosa agendada
 		else:
 			btn.modulate = Color(1.0, 1.0, 1.0) # BLANCO: Día vacío
-			
+
 		grid_calendario_confirmacion.add_child(btn)
 func publicar_reel_seleccionado(id_eleccion):
 	panel_seleccion_reel.visible = false
-	
+
 	# Ahora sí, cobramos la energía
 	Datos.stats_actor["energia_actual"] -= 1
 	ha_publicado_hoy = true
-	
+
 	if id_eleccion == "personal":
 		# LÓGICA REEL NORMAL
 		var seguidores_actuales = Datos.stats_actor["seguidores"]
 		var suerte = randi_range(1, 100)
-		
+
 		if seguidores_actuales <= 15:
 			if suerte <= 40:
 				var hist = GestorTextos.obtener_texto("redes_inicio_fracaso")
 				mostrar_alerta(hist.titulo, hist.desc + "\n\nNo ganaste seguidores.")
 				publicar_auto("Un día lento hoy. Pero la creatividad no descansa... 😅")
 			else:
-				var nuevos = randi_range(1, 3) 
+				var nuevos = randi_range(1, 3)
 				sumar_seguidores(nuevos)
 				var hist = GestorTextos.obtener_texto("redes_inicio_normal")
 				mostrar_alerta(hist.titulo, hist.desc + "\n\nGanaste +" + str(nuevos) + " Seguidores.")
@@ -3045,31 +3269,35 @@ func publicar_reel_seleccionado(id_eleccion):
 				var hist = GestorTextos.obtener_texto("redes_fracaso")
 				mostrar_alerta(hist.titulo, hist.desc + "\n\nPerdiste 5 seguidores.")
 				publicar_auto("No dejen que los haters apaguen su luz. Yo sigo enfocado. 🛡️")
-			elif suerte >= 85: 
+			elif suerte >= 85:
 				var nuevos = 50 + (Datos.habilidades_actor["carisma"] * 5)
-				if Datos.estado_actual == "viral": nuevos *= 2 
+				if Datos.estado_actual == "viral": nuevos *= 2
 				sumar_seguidores(nuevos)
 				var hist = GestorTextos.obtener_texto("redes_viral")
 				mostrar_alerta(hist.titulo, hist.desc + "\n\n¡Ganaste +" + str(nuevos) + " Seguidores!")
 				publicar_auto("¡MI CELULAR NO DEJA DE SONAR! 🤯 Gracias a todos.")
 			else:
 				var nuevos = randi_range(2, 8) + (Datos.habilidades_actor["carisma"] * 2)
-				if Datos.estado_actual == "viral": nuevos *= 2 
+				if Datos.estado_actual == "viral": nuevos *= 2
 				sumar_seguidores(nuevos)
 				var hist = GestorTextos.obtener_texto("redes_normal")
 				mostrar_alerta(hist.titulo, hist.desc + "\n\nGanaste +" + str(nuevos) + " Seguidores.")
 				publicar_auto("Nuevo video arriba. Vayan a darle amor ❤️")
-				
+
 	else:
 		# LÓGICA DE MARKETING DE PROYECTO
 		var proy = Datos.proyectos_activos[id_eleccion]
 		var nom = proy["titulo_unico"].split("\n")[1]
-		
+
 		if proy.has("tipo_pago") and proy["tipo_pago"] == "taquilla":
-			proy["hype_generado"] += (10 + Datos.habilidades_actor["carisma"] * 5)
-			var bonus_fans = int((10 + Datos.habilidades_actor["carisma"] * 2) * 1.1) 
+			var hype_base = 10 + Datos.habilidades_actor["carisma"] * 5
+			var mult_promo = 1.0
+			if bool(Datos.mejoras_simzon.get("aro_luz", false)):
+				mult_promo *= 1.15
+			proy["hype_generado"] += int(hype_base * mult_promo)
+			var bonus_fans = int((10 + Datos.habilidades_actor["carisma"] * 2) * 1.1 * mult_promo)
 			sumar_seguidores(bonus_fans)
-			
+
 			mostrar_alerta("📸 Marketing Exitoso", "¡Generaste Hype para la taquilla de tu obra!\nAdemás atrajiste +" + str(bonus_fans) + " Seguidores.")
 			publicar_auto("Ensayos a full de '" + nom + "'. ¡No olviden comprar sus boletos en taquilla! 🎭🎟️")
 		else:
@@ -3079,7 +3307,7 @@ func publicar_reel_seleccionado(id_eleccion):
 			publicar_auto("Día de llamado grabando '" + nom + "'. Amo mi trabajo 🎥✨")
 
 	actualizar_metricas_redes()
-	comprobar_hitos_redes() 
+	comprobar_hitos_redes()
 	actualizar_interfaz()
 
 
@@ -3102,14 +3330,14 @@ func aplicar_burnout():
 	# Si al ir a dormir tienes 100 de estrés, sufres un colapso
 	Datos.stats_actor["estres"] = 0 # Te reinician a cero
 	Datos.economia["dinero"] -= 150 # Gastos médicos
-	
+
 	# Faltas a TODOS tus llamados del día siguiente
 	var dia_manana = Datos.tiempo["dia"] + 1
 	if Datos.agenda.has(dia_manana):
 		Datos.agenda.erase(dia_manana)
 		reducir_seguidores(50)
 		Datos.stats_actor["ego"] = clamp(Datos.stats_actor["ego"] - 20, 0, 100) # El escándalo baja tu ego
-		
+
 	mostrar_alerta("🚨 COLAPSO MENTAL (BURNOUT)", "Llegaste a 100 de Estrés.\nSufriste un ataque de pánico y terminaste en el hospital.\n\nConsecuencias:\n- Pagaste -$150 en médicos.\n- Faltaste a tus llamados de mañana (Si tenías).\n- Escándalo en redes (-50 Seguidores).")
 	publicar_auto("Necesito un descanso de todo. Estaré desconectado un tiempo. Cuiden su salud mental. 🏥💔")
 
@@ -3129,7 +3357,7 @@ func _on_btn_renombrar_compania_pressed():
 			txt += "• " + str(f) + "\n"
 		mostrar_alerta("Fundación bloqueada", txt)
 		return
-		
+
 	var nuevo_nombre = input_nombre_compania.text.strip_edges()
 	if nuevo_nombre == "":
 		mostrar_alerta("Nombre Inválido", "El nombre no puede estar vacío.")
@@ -3140,7 +3368,7 @@ func _on_btn_renombrar_compania_pressed():
 		Datos.mi_compania["prestigio"] = max(10, int(Datos.mi_compania.get("prestigio", 0)))
 		_actualizar_tier_compania()
 		input_nombre_compania.editable = false # Bloquea la edición visual
-		
+
 		mostrar_alerta("Trámite Legal Listo", "Pagaste -$300 en constitución legal y operación inicial.\nTu compañía ahora está registrada como:\n\n" + nuevo_nombre)
 		publicar_auto("¡Gente! Oficialmente he fundado y registrado mi propia compañía. Sigan a " + nuevo_nombre + " para próximos proyectos. 🥂🎬")
 		actualizar_interfaz()
@@ -3152,13 +3380,13 @@ func obtener_arquetipo_dominante() -> String:
 	var max_p = 0
 	for clave in ["metodo", "fisico", "forma", "comercial", "instinto"]:
 		# .get() busca la llave. Si por algún error no existe, devuelve 0 y evita el crash.
-		var puntos = Datos.perfil_actor.get(clave, 0) 
-		
+		var puntos = Datos.perfil_actor.get(clave, 0)
+
 		if puntos > max_p:
 			max_p = puntos
 			dom = clave
-			
-	if max_p < 20: return "versatil" 
+
+	if max_p < 20: return "versatil"
 	return dom
 
 
@@ -3218,11 +3446,11 @@ func restaurar_todas_cartas_agotadas():
 func _on_btn_app_mazo_pressed():
 	contenedor_menu_inicio.visible = false
 	panel_app_mazo.visible = true
-	
+
 	# Limpiar lista anterior
-	for hijo in contenedor_lista_mazo.get_children(): 
+	for hijo in contenedor_lista_mazo.get_children():
 		hijo.queue_free()
-		
+
 	if Datos.mazo_jugador.is_empty():
 		var lbl = Label.new()
 		lbl.text = "No tienes cartas.\n¡Eres un actor de madera!"
@@ -3233,36 +3461,36 @@ func _on_btn_app_mazo_pressed():
 	btn_restaurar_all.text = "♻️ Restaurar TODAS las cartas agotadas"
 	btn_restaurar_all.pressed.connect(restaurar_todas_cartas_agotadas)
 	contenedor_lista_mazo.add_child(btn_restaurar_all)
-		
+
 	# Contar cartas repetidas para no mostrar una lista gigante
 	var conteo_cartas = {}
 	for id_instancia in Datos.mazo_jugador:
 		var id_carta = Datos.obtener_id_base_carta(id_instancia)
 		if conteo_cartas.has(id_carta): conteo_cartas[id_carta] += 1
 		else: conteo_cartas[id_carta] = 1
-		
+
 	# Dibujar las cartas en la UI
 	for id_carta in conteo_cartas.keys():
 		var cantidad = conteo_cartas[id_carta]
 		var info_carta = Datos.catalogo_cartas[id_carta]
-		
+
 		var panel_carta = PanelContainer.new()
 		var vbox = VBoxContainer.new()
-		
+
 		# --- NUEVA LÓGICA DE VISUALIZACIÓN DE CARTAS AGOTADAS ---
 		var cant_disponible = Datos.obtener_instancias_por_base(id_carta, true).size()
 		var lbl_titulo = Label.new()
 		lbl_titulo.text = info_carta["nombre"] + " (Disp: " + str(cant_disponible) + " / Total: " + str(cantidad) + ")"
-		
+
 		# Color según la rareza (o gris si está agotada)
 		if cant_disponible <= 0:
 			lbl_titulo.modulate = Color(0.5, 0.5, 0.5) # Gris oscuro (Agotada)
 			lbl_titulo.text += " [AGOTADA]"
 		else:
-			if info_carta["rareza"] == "Común": lbl_titulo.modulate = Color(0.8, 0.8, 0.8) 
-			elif info_carta["rareza"] == "Rara": lbl_titulo.modulate = Color(0.2, 0.5, 1.0) 
+			if info_carta["rareza"] == "Común": lbl_titulo.modulate = Color(0.8, 0.8, 0.8)
+			elif info_carta["rareza"] == "Rara": lbl_titulo.modulate = Color(0.2, 0.5, 1.0)
 			elif info_carta["rareza"] == "Épica": lbl_titulo.modulate = Color(0.8, 0.2, 1.0)
-		
+
 		var lbl_stats = Label.new()
 		var arq_txt = _formatear_arquetipo_carta(info_carta.get("arquetipo", "versatil"))
 		var nivel_prom = 1
@@ -3283,16 +3511,16 @@ func _on_btn_app_mazo_pressed():
 			xp_req_prom = max(1, int(round(float(suma_req) / float(lista_inst.size()))))
 		lbl_stats.text = "⭐ Poder Base: " + str(info_carta["poder"]) + " | Niv. Prom: " + str(nivel_prom) + " | Rareza: " + info_carta["rareza"] + " | Arquetipo: " + arq_txt
 		lbl_stats.text += "\n📈 XP prom. carta: " + str(xp_prom) + "/" + str(xp_req_prom)
-		
+
 		var lbl_desc = Label.new()
 		lbl_desc.text = "«" + info_carta["desc"] + "»"
 		lbl_desc.autowrap_mode = TextServer.AUTOWRAP_WORD
 		lbl_desc.modulate = Color(1.0, 1.0, 0.6) # Letra amarilla o itálica para el chiste
-		
+
 		vbox.add_child(lbl_titulo)
 		vbox.add_child(lbl_stats)
 		vbox.add_child(lbl_desc)
-		
+
 		var separador = HSeparator.new()
 		vbox.add_child(separador)
 
@@ -3305,15 +3533,15 @@ func _on_btn_app_mazo_pressed():
 			btn_rest.modulate = Color(0.6, 1.0, 0.6)
 			btn_rest.pressed.connect(restaurar_cartas_por_base.bind(id_carta))
 			vbox.add_child(btn_rest)
-		
+
 		# --- BOTÓN DE OLVIDAR TÉCNICA ---
 		var btn_vender = Button.new()
 		var precio_reventa = Datos.calcular_precio_reventa_carta(id_carta)
 		btn_vender.text = "🗑️ Olvidar Técnica (+$" + str(precio_reventa) + ")"
-		btn_vender.modulate = Color(1.0, 0.5, 0.5) 
+		btn_vender.modulate = Color(1.0, 0.5, 0.5)
 		btn_vender.pressed.connect(intentar_vender_carta.bind(id_carta))
 		vbox.add_child(btn_vender)
-		
+
 		# ¡OJO AQUÍ! Estas dos líneas SOLO DEBEN ESTAR ESCRITAS UNA VEZ
 		panel_carta.add_child(vbox)
 		contenedor_lista_mazo.add_child(panel_carta)
@@ -3353,33 +3581,33 @@ func _cumple_requisito_fusion(ing1: String, ing2: String, req: Dictionary) -> bo
 
 func _on_btn_fusionar_cartas_pressed():
 	panel_coach.visible = true
-	
+
 	# Limpiamos la lista anterior
 	for hijo in cont_lista_coach.get_children(): hijo.queue_free()
-	
+
 	var hay_opciones = false
-	
+
 	# Analizamos todas las recetas
 	for id_resultado in Datos.recetas_crafteo.keys():
 		var info_resultado = Datos.catalogo_cartas[id_resultado]
 		var rareza = info_resultado["rareza"]
-		
+
 		# Definimos el costo
 		var costo = 20
 		if rareza == "Épica": costo = 150
 		elif rareza == "Legendaria": costo = 1000
-		
+
 		var ingredientes = Datos.recetas_crafteo[id_resultado]
 		var ing1 = ingredientes[0]
 		var ing2 = ingredientes[1]
-		
+
 		# Comprobamos si tienes las cartas necesarias
 		var tiene_ingredientes = false
 		if ing1 == ing2:
 			if Datos.contar_cartas_por_base(ing1) >= 2: tiene_ingredientes = true
 		else:
 			if Datos.contar_cartas_por_base(ing1) > 0 and Datos.contar_cartas_por_base(ing2) > 0: tiene_ingredientes = true
-			
+
 		# Si tienes los ingredientes, creamos el botón visual
 		if tiene_ingredientes:
 			hay_opciones = true
@@ -3388,19 +3616,19 @@ func _on_btn_fusionar_cartas_pressed():
 			var n2 = Datos.catalogo_cartas[ing2]["nombre"]
 			var req = _requisito_fusion(rareza)
 			var max_ok = _cumple_requisito_fusion(ing1, ing2, req)
-			
+
 			btn_receta.text = "Crear: " + info_resultado["nombre"] + " (" + rareza + ")\n" + n1 + " + " + n2 + "\nHonorarios: $" + str(costo)
 			if not max_ok:
 				btn_receta.text += "\n🔒 Requisito: " + str(req.get("desc", "progreso insuficiente"))
 				btn_receta.disabled = true
 				btn_receta.modulate = Color(0.5, 0.5, 0.5)
 			btn_receta.custom_minimum_size = Vector2(0, 90)
-			
+
 			# Conectamos el botón para que ejecute la fusión al darle clic
 			if max_ok:
 				btn_receta.pressed.connect(ejecutar_fusion_coach.bind(id_resultado, ing1, ing2, costo, info_resultado["nombre"]))
 			cont_lista_coach.add_child(btn_receta)
-			
+
 	# Si no hay nada que puedas armar
 	if not hay_opciones:
 		var lbl = Label.new()
@@ -3412,7 +3640,7 @@ func ejecutar_fusion_coach(id_resultado, ing1, ing2, costo, nombre_resultado):
 	if Datos.economia["dinero"] < costo:
 		mostrar_alerta("Sin Fondos", "El Coach se ríe de ti. Sus honorarios son $" + str(costo) + " y no te alcanza.")
 		return
-		
+
 	# Cobrar y fusionar
 	var rareza_obj = Datos.catalogo_cartas.get(id_resultado, {}).get("rareza", "Común")
 	var req = _requisito_fusion(rareza_obj)
@@ -3436,7 +3664,7 @@ func ejecutar_fusion_coach(id_resultado, ing1, ing2, costo, nombre_resultado):
 		Datos.mazo_jugador.append(nueva_inst)
 		Datos.mazo_disponible.append(nueva_inst)
 	mostrar_alerta("🧠 Sesión Exitosa", "El Coach conectó tus emociones.\nObtuviste:\n🎭 " + nombre_resultado)
-	
+
 	actualizar_interfaz()
 	_on_btn_fusionar_cartas_pressed() # Refrescamos la lista del coach en vivo
 
@@ -3465,12 +3693,12 @@ func jugar_carta_balasim(boton_carta, id_carta, info_carta):
 				continue
 			if info_sel.has("efecto") and info_sel["efecto"] == "mas_jugadas":
 				limite_actual += info_sel.get("valor", 0)
-				
-		if seleccion_actual_nodos.size() >= limite_actual: return 
-			
+
+		if seleccion_actual_nodos.size() >= limite_actual: return
+
 		seleccion_actual_nodos.append(boton_carta)
 		seleccion_actual_ids.append(id_carta)
-		boton_carta.modulate = Color(0.3, 1.0, 0.3) 
+		boton_carta.modulate = Color(0.3, 1.0, 0.3)
 		if is_instance_valid(btn_mulligan): btn_mulligan.disabled = true
 
 	actualizar_ui_balasim(label_jefe.text.split("\n")[0].replace("⚔️ ", ""))
@@ -3522,7 +3750,7 @@ func calcular_puntos_proyectados() -> Dictionary:
 		prob_critico_base = clamp((mi_estres - 35) / 320.0, 0.0, 0.25)
 	_aplicar_agentes_inicio_ronda_core()
 	prob_critico_base += float(bonus_agentes_ronda.get("crit_bonus", 0.0))
-	
+
 	var arquetipos_usados = {}
 	for id_c in seleccion_actual_ids:
 		var info = Datos.obtener_info_carta(id_c)
@@ -3532,11 +3760,11 @@ func calcular_puntos_proyectados() -> Dictionary:
 		var arq_carta = info.get("arquetipo", "versatil")
 		var penal_repeticion = obtener_penalizacion_repeticion_turno(arquetipos_usados, arq_carta)
 		arquetipos_usados[arq_carta] = arquetipos_usados.get(arq_carta, 0) + 1
-		
+
 		# --- 1. BONO POR ESTADÍSTICAS DEL ACTOR ---
 		var bono_stat = 0
 		bono_stat = obtener_stat_arquetipo(arq_carta)
-		
+
 		# Balance: Cada 6 puntos en tu habilidad te da +1 de Poder Base a la carta
 		var poder_escalado = poder_base + int(bono_stat / 6.0)
 # --- 👑 EGO ESCALABLE INFINITO (Proyección) ---
@@ -3547,7 +3775,7 @@ func calcular_puntos_proyectados() -> Dictionary:
 		# --- 2. MULTIPLICADOR POR DEBILIDAD DEL JEFE ---
 		var multi_tipo = _multiplicador_vs_jefe(arq_jefe, arq_carta)
 		var m_ag = _mult_agente_arq_core(arq_carta)
-		
+
 		# Aplicamos el multiplicador al poder ya escalado por tus stats
 		var poder_base_carta = int((poder_escalado * multi_tipo * m_ag) * penal_repeticion)
 		puntos_proyectados += poder_base_carta
@@ -3584,14 +3812,14 @@ func calcular_puntos_proyectados() -> Dictionary:
 		else:
 			max_rng += poder_base_carta
 			min_rng += poder_base_carta
-		
+
 		if info.has("efecto"):
 			var ef = info["efecto"]
 			var val = float(info.get("valor", 0))
 			if ef == "doblar_poder_actual": multiplicador_proyectado *= 2.0
 			elif ef == "multiplicar_poder": multiplicador_proyectado *= val
 			elif ef == "escalar_carisma": puntos_proyectados += int(Datos.habilidades_actor["carisma"] * val)
-			
+
 	if seleccion_actual_ids.size() >= 2:
 		for id_combo in Datos.combos_balasim.keys():
 			var combo = Datos.combos_balasim[id_combo]
@@ -3603,7 +3831,7 @@ func calcular_puntos_proyectados() -> Dictionary:
 				if req1 == req2 and bases_sel.count(req1) < 2: continue
 				multiplicador_proyectado *= combo["multiplicador"]
 				break
-				
+
 				# --- 🌟 PODER ACTIVO DEL MÉTODO (RIESGO/RECOMPENSA) ---
 	#var mi_arq = obtener_arquetipo_dominante()
 	if mi_arq == "metodo" and Datos.stats_actor["estres"] >= 50:
@@ -3891,21 +4119,21 @@ func ejecutar_accion_jefe():
 		nivel_casting = max(1, _valor_entero_seguro(casting_data_actual.get("nivel_minimo", 1), 1))
 	var accion_tomada = ""
 	var color_accion = Color.WHITE
-	
+
 	# El aumento base ahora escala con el NIVEL DEL CASTING
 	var aumento_base = randi_range(3, 8) + int(nivel_casting * 3.5)
-	
+
 	if jefe == "comercial" or jefe == "fisico":
 		exigencia_director += aumento_base
 		accion_tomada = "📈 ¡Corte! Ponle más energía (+ " + str(aumento_base) + " Exigencia)"
 		color_accion = Color(1.0, 0.4, 0.4) # Rojo
-		
+
 	elif jefe == "metodo" or jefe == "instinto":
 		var estres_dmg = randi_range(5, 10) + int(nivel_casting / 2.0)
 		Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] + estres_dmg, 0, 100)
 		accion_tomada = "💢 ¡No me lo creo! (Daño mental: +" + str(estres_dmg) + " Estrés)"
 		color_accion = Color(0.8, 0.2, 0.8) # Morado
-		
+
 	elif jefe == "forma":
 		if mulligans_restantes > 0 and randi_range(1, 100) <= 50:
 			mulligans_restantes -= 1
@@ -3915,11 +4143,11 @@ func ejecutar_accion_jefe():
 			exigencia_director += aumento_base
 			accion_tomada = "📉 ¡Más técnica! (+ " + str(aumento_base) + " Exigencia)"
 			color_accion = Color(1.0, 0.4, 0.4)
-			
+
 	# --- VISUAL FEEDBACK Y SABOTAJES ---
 	escribir_log_batalla("🎬 El Director (" + jefe.capitalize() + ") interviene: " + accion_tomada)
 	mostrar_texto_flotante(accion_tomada, label_jefe, color_accion, 1.2)
-	
+
 	# Sabotajes escalares: En niveles altos, el jefe tira basura más seguido
 	var prob_sabotaje = clamp(15 + (nivel_casting * 2), 15, 60)
 	if randi_range(1, 100) <= prob_sabotaje:
@@ -3931,11 +4159,11 @@ func inyectar_carta_peligro(id_peligro):
 	var nivel_arq = Datos.perfil_actor.get(mi_arquetipo, 0)
 
 	if mi_arquetipo == "forma":
-		var prob_bloqueo = clamp(25 + nivel_arq, 25, 90) 
+		var prob_bloqueo = clamp(25 + nivel_arq, 25, 90)
 		if randi_range(1, 100) <= prob_bloqueo:
 			escribir_log_batalla("🛡️ Disciplina: ¡Bloqueaste el ataque mental (" + str(prob_bloqueo) + "%)!")
 			return
-			
+
 	if contenedor_mano.get_child_count() >= 6:
 		var victima = contenedor_mano.get_child(0)
 		if is_instance_valid(victima): victima.queue_free()
@@ -3950,13 +4178,13 @@ func inyectar_carta_peligro(id_peligro):
 	var btn_peligro = Button.new()
 	btn_peligro.text = "⚠️ " + info["nombre"] + "\n(Click 4 veces para calmarte)"
 	btn_peligro.custom_minimum_size = Vector2(120, 160)
-	
+
 	btn_peligro.set_meta("es_peligro", true)
 	btn_peligro.set_meta("clicks", 4)
 	btn_peligro.set_meta("estres_acumulado", 0)
 
 	# Adiós animación problemática, hola color fijo seguro
-	btn_peligro.modulate = Color(1.0, 0.3, 0.3) 
+	btn_peligro.modulate = Color(1.0, 0.3, 0.3)
 
 	btn_peligro.pressed.connect(func():
 		var c = btn_peligro.get_meta("clicks") - 1
@@ -3988,8 +4216,8 @@ func inyectar_carta_peligro(id_peligro):
 		mostrar_texto_flotante("💥 +" + str(estres_tick) + " Estrés", btn_peligro, Color(1.0, 0.35, 0.35), 1.0)
 		escribir_log_batalla("⏱️ " + info["nombre"] + " te afecta: +" + str(estres_tick) + " Estrés.")
 	)
-	
-	contenedor_mano.add_child(btn_peligro) 
+
+	contenedor_mano.add_child(btn_peligro)
 	escribir_log_batalla("💥 El Jefe saboteó tu mente con: " + info["nombre"])
 # --- REPARTIDOR DE CARTAS ---
 # --- REPARTIDOR DE CARTAS ---
@@ -3999,20 +4227,20 @@ func repartir_mano_balasim(es_inicio):
 			hijo.queue_free()
 		mazo_combate_actual = Datos.mazo_disponible.duplicate()
 		mazo_combate_actual.shuffle()
-		
+
 	var cartas_vivas = 0
 	for hijo in contenedor_mano.get_children():
 		if not hijo.is_queued_for_deletion():
 			cartas_vivas += 1
-			
+
 	var total_disponible = mazo_combate_actual.size() + cartas_vivas
 	var tope_mano = min(6, total_disponible)
-	
+
 	# 🚨 SOLUCIÓN NUCLEAR: Un bucle FOR no puede crashear Windows. Máximo 50 vueltas.
 	for i in range(50):
 		if cartas_vivas >= tope_mano:
 			break
-			
+
 		if mazo_combate_actual.is_empty():
 			break # Si el mazo de verdad no tiene nada, salimos
 
@@ -4054,16 +4282,16 @@ func crear_boton_carta_en_mesa(id_c):
 
 func _on_btn_mulligan_pressed():
 	if mulligans_restantes <= 0: return
-	
+
 	mulligans_restantes -= 1
-	
+
 	# Limpiamos si tenías alguna carta seleccionada (verde)
 	seleccion_actual_nodos.clear()
 	seleccion_actual_ids.clear()
-	
+
 	# Usamos la nueva función modular para limpiar la mesa y robar
 	repartir_mano_balasim(true)
-	
+
 	# Actualizamos los textos de la interfaz
 	actualizar_ui_balasim(label_jefe.text.split("\n")[0].replace("⚔️ ", ""))
 
@@ -4144,7 +4372,7 @@ func comprar_curso(tipo_curso):
 	# 1. Separar el catálogo por rarezas para el RNG (excluye basura)
 	var pools = _obtener_pools_cartas_por_rareza()
 	var nivel = Datos.habilidades_actor.get("nivel_general", 1)
-	
+
 	# 2. Definir Costos y Recompensas según el curso
 	if tipo_curso == "basico":
 		costo = 50; costo_energia = 1
@@ -4153,7 +4381,7 @@ func comprar_curso(tipo_curso):
 			for i in range(4):
 				var rareza = _elegir_rareza_por_pesos(pesos)
 				cartas_ganadas.append(_elegir_carta_por_rareza(pools, rareza))
-			
+
 	elif tipo_curso == "medio":
 		costo = 250; costo_energia = 2
 		if comprobar_pago_clase(costo, costo_energia):
@@ -4161,7 +4389,7 @@ func comprar_curso(tipo_curso):
 			for i in range(3):
 				var rareza = _elegir_rareza_por_pesos(pesos)
 				cartas_ganadas.append(_elegir_carta_por_rareza(pools, rareza))
-			
+
 	elif tipo_curso == "pro":
 		costo = 1000; costo_energia = 3
 		if comprobar_pago_clase(costo, costo_energia):
@@ -4169,7 +4397,7 @@ func comprar_curso(tipo_curso):
 			for i in range(3):
 				var rareza = _elegir_rareza_por_pesos(pesos)
 				cartas_ganadas.append(_elegir_carta_por_rareza(pools, rareza))
-			
+
 	# 3. Entregar las cartas al jugador
 	if cartas_ganadas.size() > 0:
 		var texto_alerta = "Has asistido a la clase y tu técnica mejoró. Aprendiste:\n\n"
@@ -4180,7 +4408,7 @@ func comprar_curso(tipo_curso):
 			Datos.mazo_jugador.append(id_inst)
 			Datos.mazo_disponible.append(id_inst)
 			texto_alerta += "🎭 " + Datos.catalogo_cartas[id_carta]["nombre"] + " (" + Datos.catalogo_cartas[id_carta]["rareza"] + ")\n"
-			
+
 		mostrar_alerta("🎓 Clase Completada", texto_alerta)
 		actualizar_interfaz()
 
@@ -4191,7 +4419,7 @@ func comprobar_pago_clase(costo, energia) -> bool:
 	if Datos.economia["dinero"] < costo:
 		mostrar_alerta("Sin Fondos", "El arte cuesta caro. Necesitas $" + str(costo) + " para este curso.")
 		return false
-		
+
 	# Cobrar
 	Datos.stats_actor["energia_actual"] -= energia
 	Datos.economia["dinero"] -= costo
@@ -4206,9 +4434,9 @@ func _on_btn_curso_pro_pressed(): comprar_curso("pro")
 # ==========================================
 var panel_admin_creado = false
 var nodo_panel_admin = null
-const DIAS_POR_MES = 30
 const NOMBRES_DIA_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
 const NOMBRES_MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+const ANIO_BASE = 2025
 
 func _input(event):
 	# F12: Bomba Nuclear (Borra progreso)
@@ -4216,17 +4444,17 @@ func _input(event):
 		Datos.borrar_partida()
 		get_tree().reload_current_scene()
 		print("¡BOMBA NUCLEAR! Partida borrada.")
-		
+
 	# --- MINIJUEGO DE MESERO ---
 	if rutina_activa:
 		if (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT) or (event is InputEventKey and event.pressed and event.keycode == KEY_SPACE):
 			rutina_activa = false
-			
+
 			# Evaluamos si el cursor quedó dentro de la zona verde
 			var cx = cursor_barra.position.x + (cursor_barra.size.x / 2.0)
 			var zx_ini = zona_exito.position.x
 			var zx_fin = zona_exito.position.x + zona_exito.size.x
-			
+
 			var fue_exito = (cx >= zx_ini and cx <= zx_fin)
 			resolver_rutina_general(fue_exito)
 			return # Evitamos que haga otras cosas
@@ -4240,22 +4468,22 @@ func crear_panel_admin():
 	nodo_panel_admin = PanelContainer.new()
 	nodo_panel_admin.position = Vector2(10, 50) # Arriba a la izquierda
 	nodo_panel_admin.z_index = 100 # Para que quede por encima de todo
-	
+
 	var vbox = VBoxContainer.new()
 	var lbl = Label.new()
 	lbl.text = "🔧 MODO DIOS"
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vbox.add_child(lbl)
-	
+
 	var btn_dinero = Button.new(); btn_dinero.text = "💰 +$1000"
 	btn_dinero.pressed.connect(func(): Datos.economia["dinero"] += 1000; actualizar_interfaz())
-	
+
 	var btn_energia = Button.new(); btn_energia.text = "⚡ Energía Infinita"
 	btn_energia.pressed.connect(func(): Datos.stats_actor["energia_actual"] = 999; actualizar_interfaz())
-	
+
 	var btn_xp = Button.new(); btn_xp.text = "🧠 +100 XP"
 	btn_xp.pressed.connect(func(): Datos.habilidades_actor["xp_actual"] += 100; comprobar_level_up(); actualizar_interfaz())
-	
+
 	var btn_dia = Button.new(); btn_dia.text = "⏩ Saltar Día"
 	btn_dia.pressed.connect(func(): _procesar_fin_dia())
 
@@ -4334,7 +4562,7 @@ func abrir_tienda_cartas():
 	dialog.title = "🎓 Academia: Nuevas Técnicas"
 	dialog.dialog_text = "Aprende nuevas técnicas para tu mazo (Rotan cada día):"
 	dialog.ok_button_text = "Salir de la Academia"
-	
+
 	var vbox = VBoxContainer.new()
 	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
 
@@ -4364,23 +4592,23 @@ func abrir_tienda_cartas():
 		mostrar_alerta("🧪 Técnica generada", "Obtuviste: " + Datos.catalogo_cartas[id_new]["nombre"] + " (" + Datos.catalogo_cartas[id_new]["rareza"] + ")")
 	)
 	vbox.add_child(btn_generar)
-	
+
 	for id_c in Datos.mercado_hoy:
 		var info = Datos.catalogo_cartas[id_c]
 		var btn_comprar = Button.new()
 		var precio = Datos.calcular_precio_compra_carta(id_c)
-		
+
 		btn_comprar.text = "Comprar: " + info["nombre"] + " ($" + str(precio) + ")\n" + info["desc"]
 		btn_comprar.custom_minimum_size = Vector2(250, 60)
 		btn_comprar.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		
+
 		btn_comprar.pressed.connect(func():
 			# --- NUEVO: LÍMITE DE MAZO ---
 			var limite_mazo = 15 + int(Datos.habilidades_actor["memoria"] / 2.0)
 			if Datos.mazo_jugador.size() >= limite_mazo:
 				mostrar_alerta("🧠 Mente Saturada", "Tu mazo está al límite (" + str(limite_mazo) + " cartas).\nVe a la App 'Mi Mazo' y olvida (vende) técnicas viejas para aprender nuevas.")
 				return
-				
+
 			if Datos.economia["dinero"] >= precio:
 				Datos.economia["dinero"] -= precio
 				var id_inst = Datos.crear_instancia_carta(id_c)
@@ -4398,7 +4626,7 @@ func abrir_tienda_cartas():
 				mostrar_alerta("💸 Sin fondos", "No tienes dinero suficiente.")
 		)
 		vbox.add_child(btn_comprar)
-		
+
 	dialog.add_child(vbox)
 	add_child(dialog)
 	dialog.popup_centered()
@@ -4411,7 +4639,7 @@ func intentar_vender_carta(id_carta):
 	var precio_reventa = Datos.calcular_precio_reventa_carta(id_carta)
 	dialog.get_ok_button().text = "Vender ($" + str(precio_reventa) + ")"
 	dialog.get_cancel_button().text = "Cancelar"
-	
+
 	dialog.confirmed.connect(func():
 		var instancias = Datos.obtener_instancias_por_base(id_carta, false)
 		if instancias.is_empty():
@@ -4437,18 +4665,18 @@ func intentar_vender_carta(id_carta):
 # ==========================================
 func mostrar_texto_flotante(texto: String, nodo_origen: Control, color: Color = Color.WHITE, escala: float = 1.0):
 	if not is_instance_valid(nodo_origen) or not panel_balasim.visible: return
-	
+
 	var lbl = Label.new()
 	lbl.text = texto
 	lbl.add_theme_font_size_override("font_size", int(18 * escala))
 	lbl.add_theme_color_override("font_color", color)
 	lbl.add_theme_color_override("font_outline_color", Color.BLACK)
 	lbl.add_theme_constant_override("outline_size", 4)
-	
+
 	# Posicionar justo en el centro del nodo que lo genera
 	lbl.position = nodo_origen.global_position + (nodo_origen.size / 2.0) - Vector2(20, 20)
 	panel_balasim.add_child(lbl)
-	
+
 	# Animación de flotar y desvanecerse
 	var tween = get_tree().create_tween()
 	var pos_final = lbl.position + Vector2(randf_range(-30, 30), -80) # Sube flotando
