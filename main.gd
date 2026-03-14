@@ -141,6 +141,9 @@ var monologo_xp_recolectada = 0
 var monologo_spawn_acum = 0.0
 var monologo_ui = {}
 var monologo_dots = []
+var monologo_combo = 0
+var monologo_ultima_tecnica = -1
+var monologo_estilo_activo = "equilibrado"
 var tecnicas_monologo = [
 	{"nombre": "Respiración", "costo": 14, "dps": 10.0, "dur": 3.5, "radio": 120.0, "color": Color(0.6, 0.9, 1.0)},
 	{"nombre": "Leer en Voz Alta", "costo": 20, "dps": 16.0, "dur": 3.0, "radio": 160.0, "color": Color(1.0, 0.8, 0.4)},
@@ -767,14 +770,40 @@ func abrir_selector_carta_monologo():
 		btn.pressed.connect(func(id_sel = id_inst):
 			carta_entrenando_id = id_sel
 			dialog.queue_free()
-			iniciar_monologo_interior(id_sel)
+			abrir_plan_ensayo_dialog(id_sel)
 		)
 		vb.add_child(btn)
 	dialog.add_child(vb)
 	add_child(dialog)
 	dialog.popup_centered(Vector2(560, 500))
 
-func iniciar_monologo_interior(id_carta_entrenada: String):
+
+func abrir_plan_ensayo_dialog(id_carta_entrenada: String):
+	var dialog = AcceptDialog.new()
+	dialog.title = "🎯 Plan de Ensayo en Casa"
+	dialog.dialog_text = "Elige enfoque táctico (cambia ritmo, riesgo y recompensa):"
+	dialog.ok_button_text = "Cancelar"
+	var vb = VBoxContainer.new()
+	var opciones = [
+		{"id": "equilibrado", "txt": "⚖️ Equilibrado\nBuen control general. Combo estable y dificultad normal."},
+		{"id": "agresivo", "txt": "🔥 Agresivo\nMás spawn y presión, pero +XP y combos más fuertes."},
+		{"id": "metodico", "txt": "🧘 Metódico\nMenos presión y más concentración, pero menor XP base."}
+	]
+	for op in opciones:
+		var btn = Button.new()
+		btn.custom_minimum_size = Vector2(360, 72)
+		btn.autowrap_mode = TextServer.AUTOWRAP_WORD
+		btn.text = str(op["txt"])
+		btn.pressed.connect(func(estilo = str(op["id"])):
+			dialog.queue_free()
+			iniciar_monologo_interior(id_carta_entrenada, estilo)
+		)
+		vb.add_child(btn)
+	dialog.add_child(vb)
+	add_child(dialog)
+	dialog.popup_centered(Vector2(520, 360))
+
+func iniciar_monologo_interior(id_carta_entrenada: String, estilo: String = "equilibrado"):
 	if Datos.stats_actor["energia_actual"] < 1:
 		mostrar_alerta("¡Exhausto!", "No tienes energía para trabajar mesa.")
 		return
@@ -786,6 +815,9 @@ func iniciar_monologo_interior(id_carta_entrenada: String):
 	monologo_xp_recolectada = 0
 	monologo_spawn_acum = 0.0
 	monologo_dots.clear()
+	monologo_combo = 0
+	monologo_ultima_tecnica = -1
+	monologo_estilo_activo = estilo
 	panel_balasim.visible = false
 	if monologo_ui.has("root") and is_instance_valid(monologo_ui["root"]):
 		monologo_ui["root"].queue_free()
@@ -796,6 +828,16 @@ func iniciar_monologo_interior(id_carta_entrenada: String):
 	monologo_ui = {"root": root, "enemigos": [], "carta": id_carta_entrenada}
 	var lvl_c = max(1, Datos.obtener_nivel_carta(id_carta_entrenada))
 	monologo_ui["dificultad"] = 1.0 + (lvl_c * 0.08)
+	if estilo == "agresivo":
+		monologo_ui["dificultad"] *= 1.18
+		monologo_ui["xp_mult"] = 1.28
+		monologo_estamina = 46.0
+	elif estilo == "metodico":
+		monologo_ui["dificultad"] *= 0.86
+		monologo_ui["xp_mult"] = 0.9
+		monologo_concentracion = 115.0
+	else:
+		monologo_ui["xp_mult"] = 1.0
 	var lbl_top = Label.new(); lbl_top.position = Vector2(24, 18); root.add_child(lbl_top); monologo_ui["lbl_top"] = lbl_top
 	var lbl_time = Label.new(); lbl_time.position = Vector2(24, 46); root.add_child(lbl_time); monologo_ui["lbl_time"] = lbl_time
 	var carta = PanelContainer.new(); carta.custom_minimum_size = Vector2(300, 140); carta.position = Vector2(430, 260); root.add_child(carta); monologo_ui["carta"] = carta
@@ -814,6 +856,13 @@ func iniciar_monologo_interior(id_carta_entrenada: String):
 		btn.pressed.connect(usar_tecnica_monologo.bind(i))
 		root.add_child(btn)
 		monologo_ui["btn_" + str(i)] = btn
+	var btn_pulso = Button.new()
+	btn_pulso.position = Vector2(740, 560)
+	btn_pulso.custom_minimum_size = Vector2(320, 80)
+	btn_pulso.text = "⚡ Pulso Dramático\nCosto 30 | Daño masivo + combo"
+	btn_pulso.pressed.connect(_usar_pulso_dramatico)
+	root.add_child(btn_pulso)
+	monologo_ui["btn_pulso"] = btn_pulso
 	actualizar_ui_monologo()
 
 func usar_tecnica_monologo(idx: int):
@@ -824,8 +873,15 @@ func usar_tecnica_monologo(idx: int):
 	var t = tecnicas_monologo[idx]
 	if monologo_estamina < float(t["costo"]):
 		return
+	var repetida = (idx == monologo_ultima_tecnica)
+	monologo_ultima_tecnica = idx
+	if repetida:
+		monologo_combo = max(0, monologo_combo - 1)
+		monologo_concentracion = max(0.0, monologo_concentracion - 2.5)
+	else:
+		monologo_combo = min(9, monologo_combo + 1)
 	monologo_estamina -= float(t["costo"])
-	var tiempo_factor = 1.0 + min(1.5, monologo_tiempo / 50.0)
+	var tiempo_factor = 1.0 + min(1.5, monologo_tiempo / 50.0) + (float(monologo_combo) * 0.05)
 	var dot = {
 		"tiempo": float(t["dur"]),
 		"dps": float(t["dps"]) * tiempo_factor,
@@ -834,7 +890,38 @@ func usar_tecnica_monologo(idx: int):
 		"nombre": t["nombre"]
 	}
 	monologo_dots.append(dot)
-	mostrar_texto_flotante("🌀 " + t["nombre"], monologo_ui.get("carta"), t["color"], 1.0)
+	var burst = 3.0 + float(monologo_combo) * 0.8
+	for enemigo in monologo_ui.get("enemigos", []):
+		if not is_instance_valid(enemigo):
+			continue
+		if enemigo.position.distance_to(Vector2(580, 330)) <= float(t["radio"]) * 0.8:
+			var hpb = float(enemigo.get_meta("hp", 10.0)) - burst
+			enemigo.set_meta("hp", hpb)
+			enemigo.text = str(enemigo.get_meta("tipo", "Distracción")) + " (" + str(max(0, int(hpb))) + ")"
+			if hpb <= 0.0:
+				monologo_xp_recolectada += 5 + monologo_combo
+				enemigo.queue_free()
+	mostrar_texto_flotante("🌀 " + t["nombre"] + " x" + str(max(1, monologo_combo)), monologo_ui.get("carta"), t["color"], 1.0)
+	actualizar_ui_monologo()
+
+
+func _usar_pulso_dramatico():
+	if not monologo_activo:
+		return
+	if monologo_estamina < 30.0:
+		return
+	monologo_estamina -= 30.0
+	monologo_combo = min(9, monologo_combo + 2)
+	for enemigo in monologo_ui.get("enemigos", []):
+		if not is_instance_valid(enemigo):
+			continue
+		var hp = float(enemigo.get_meta("hp", 10.0)) - (12.0 + float(monologo_combo) * 1.5)
+		enemigo.set_meta("hp", hp)
+		enemigo.text = str(enemigo.get_meta("tipo", "Distracción")) + " (" + str(max(0, int(hp))) + ")"
+		if hp <= 0.0:
+			monologo_xp_recolectada += 7 + monologo_combo
+			enemigo.queue_free()
+	mostrar_texto_flotante("⚡ Pulso Dramático", monologo_ui.get("carta"), Color(1.0, 0.9, 0.3), 1.0)
 	actualizar_ui_monologo()
 
 func _procesar_monologo(delta):
@@ -842,11 +929,15 @@ func _procesar_monologo(delta):
 		monologo_activo = false
 		return
 	monologo_tiempo += delta
-	monologo_estamina = min(100.0, monologo_estamina + (10.0 * delta))
+	var regen = 11.0
+	if monologo_estilo_activo == "agresivo": regen = 12.5
+	elif monologo_estilo_activo == "metodico": regen = 13.5
+	monologo_estamina = min(100.0, monologo_estamina + (regen * delta))
 	monologo_spawn_acum += delta
 	var dificultad = float(monologo_ui.get("dificultad", 1.0))
 	var presion_tiempo = 1.0 + min(1.6, monologo_tiempo / 35.0)
-	if monologo_spawn_acum >= (1.65 / (dificultad * presion_tiempo)):
+	var ritmo_spawn = 1.2 if monologo_estilo_activo == "agresivo" else (0.82 if monologo_estilo_activo == "metodico" else 1.0)
+	if monologo_spawn_acum >= (1.35 / (dificultad * presion_tiempo * ritmo_spawn)):
 		monologo_spawn_acum = 0.0
 		_spawn_enemigo_monologo(presion_tiempo)
 	var centro = Vector2(580, 330)
@@ -880,7 +971,7 @@ func _procesar_monologo(delta):
 	actualizar_ui_monologo()
 	if monologo_concentracion <= 0.0:
 		finalizar_monologo_interior(false)
-	elif monologo_tiempo >= 95.0:
+	elif monologo_tiempo >= 52.0:
 		finalizar_monologo_interior(true)
 
 func _spawn_enemigo_monologo(presion_tiempo: float = 1.0):
@@ -905,9 +996,9 @@ func _spawn_enemigo_monologo(presion_tiempo: float = 1.0):
 func actualizar_ui_monologo():
 	if not monologo_ui.has("lbl_top"):
 		return
-	monologo_ui["lbl_top"].text = "🧠 Concentración: " + str(int(monologo_concentracion)) + "/100"
+	monologo_ui["lbl_top"].text = "🧠 Concentración: " + str(int(monologo_concentracion)) + "/100 | Estilo: " + str(monologo_estilo_activo).capitalize()
 	monologo_ui["lbl_time"].text = "⏳ Tiempo sobrevivido: " + str(snapped(monologo_tiempo, 0.1)) + "s"
-	monologo_ui["lbl_est"].text = "⚡ Estamina mental: " + str(int(monologo_estamina)) + " | XP acumulada carta: " + str(monologo_xp_recolectada) + " | Zonas activas: " + str(monologo_dots.size())
+	monologo_ui["lbl_est"].text = "⚡ Estamina: " + str(int(monologo_estamina)) + " | Combo: x" + str(max(1, monologo_combo)) + " | XP carta: " + str(monologo_xp_recolectada) + " | Zonas: " + str(monologo_dots.size())
 
 func finalizar_monologo_interior(fue_victoria: bool):
 	monologo_activo = false
@@ -915,7 +1006,8 @@ func finalizar_monologo_interior(fue_victoria: bool):
 	var bonus = 0
 	if fue_victoria:
 		bonus = 40
-	var xp_total = monologo_xp_recolectada + xp_por_tiempo + bonus
+	var xp_mult_estilo = float(monologo_ui.get("xp_mult", 1.0))
+	var xp_total = int(round(float(monologo_xp_recolectada + xp_por_tiempo + bonus) * xp_mult_estilo))
 	if bool(Datos.mejoras_simzon.get("set_utileria", false)):
 		xp_total = int(round(float(xp_total) * 1.2))
 	xp_total = int(clamp(xp_total, 12, 150))
@@ -934,7 +1026,7 @@ func finalizar_monologo_interior(fue_victoria: bool):
 	monologo_dots.clear()
 	var t = "Perdiste concentración tras " + str(snapped(monologo_tiempo, 0.1)) + "s."
 	if fue_victoria:
-		t = "Resististe " + str(snapped(monologo_tiempo, 0.1)) + "s y dominaste el monólogo."
+		t = "Dominaste el monólogo en " + str(snapped(monologo_tiempo, 0.1)) + "s con estilo " + str(monologo_estilo_activo).capitalize() + "."
 	mostrar_alerta("🧠 Monólogo Interior", t + "\nXP Carta: +" + str(xp_total) + txt_carta + "\nXP Personaje: +" + str(xp_actor))
 	comprobar_level_up()
 	actualizar_interfaz()
