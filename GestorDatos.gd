@@ -4,7 +4,7 @@ extends Node
 # 🧠 VARIABLES GLOBALES DEL JUGADOR
 # ==========================================
 var economia = {
-	"dinero": 250,
+	"dinero": 320,
 	"deuda_bancaria": 0
 }
 var mercado_hoy = [] # Guarda los IDs de las 3 cartas a la venta del día
@@ -270,18 +270,18 @@ const RANGOS_EFECTO = {
 	"restaurar_mulligan": {"Común": Vector2(1, 1), "Rara": Vector2(1, 1), "Épica": Vector2(1, 2), "Legendaria": Vector2(2, 3)}
 }
 const COSTE_BASE_RAREZA = {
-	"Común": 70,
-	"Rara": 130,
-	"Épica": 230,
-	"Legendaria": 380,
+	"Común": 78,
+	"Rara": 150,
+	"Épica": 280,
+	"Legendaria": 460,
 	"Peligro": 5
 }
 
 const MULTIPLICADOR_REVENTA_RAREZA = {
-	"Común": 0.45,
-	"Rara": 0.48,
-	"Épica": 0.52,
-	"Legendaria": 0.58,
+	"Común": 0.42,
+	"Rara": 0.45,
+	"Épica": 0.5,
+	"Legendaria": 0.56,
 	"Peligro": 0.0
 }
 
@@ -528,19 +528,19 @@ var espacios_disponibles = {
 		"capacidad_publico": 5,
 		"especialidad": "ninguna"
 	},
-	"cafe_bohemio": {"nombre": "Café Bohemio", "renta_mensual": 100, "precio_compra": 1500, "tier": 1, "nivel_max_contactos": "Indie", "capacidad_equipo": 4, "capacidad_publico": 30, "especialidad": "intimo"},
-	"foro_underground": {"nombre": "Foro Alternativo (Underground)", "renta_mensual": 350, "precio_compra": 5250, "tier": 2, "nivel_max_contactos": "Indie", "capacidad_equipo": 7, "capacidad_publico": 80, "especialidad": "experimental"},
-	"teatro_camara": {"nombre": "Teatro de Cámara Clásico", "renta_mensual": 1000, "precio_compra": 15000, "tier": 3, "nivel_max_contactos": "Profesional", "capacidad_equipo": 15, "capacidad_publico": 250, "especialidad": "texto"},
-	"gran_auditorio": {"nombre": "Gran Auditorio de la Ciudad", "renta_mensual": 4000, "precio_compra": 60000, "tier": 4, "nivel_max_contactos": "Profesional", "capacidad_equipo": 45, "capacidad_publico": 1000, "especialidad": "mega"}
+	"cafe_bohemio": {"nombre": "Café Bohemio", "renta_mensual": 120, "precio_compra": 1800, "tier": 1, "nivel_max_contactos": "Indie", "capacidad_equipo": 4, "capacidad_publico": 30, "especialidad": "intimo"},
+	"foro_underground": {"nombre": "Foro Alternativo (Underground)", "renta_mensual": 420, "precio_compra": 6300, "tier": 2, "nivel_max_contactos": "Indie", "capacidad_equipo": 7, "capacidad_publico": 80, "especialidad": "experimental"},
+	"teatro_camara": {"nombre": "Teatro de Cámara Clásico", "renta_mensual": 1250, "precio_compra": 18750, "tier": 3, "nivel_max_contactos": "Profesional", "capacidad_equipo": 15, "capacidad_publico": 250, "especialidad": "texto"},
+	"gran_auditorio": {"nombre": "Gran Auditorio de la Ciudad", "renta_mensual": 4700, "precio_compra": 70500, "tier": 4, "nivel_max_contactos": "Profesional", "capacidad_equipo": 45, "capacidad_publico": 1000, "especialidad": "mega"}
 }
 # ==========================================
 # 🎭 FORMATOS DE PRODUCCIÓN PROPIA (NUEVO)
 # ==========================================
 var formatos_produccion = {
-	"monologo_bolsillo": {"titulo": "Monólogo de Bolsillo", "descripcion": "Formato pequeño para testear material.", "costo_montaje": 200, "corte_boleto": 12, "dias_de_trabajo": 2, "aforo_minimo": 15, "dificultad": 1.7, "importancia": 1, "requiere_taquilla": true, "formato_tipo": "intimo"},
-	"obra_reparto": {"titulo": "Obra de Reparto", "descripcion": "Montaje estándar con elenco completo.", "costo_montaje": 800, "corte_boleto": 20, "dias_de_trabajo": 4, "aforo_minimo": 50, "dificultad": 2.8, "importancia": 2, "requiere_taquilla": true, "formato_tipo": "experimental"},
-	"musical_gran_formato": {"titulo": "Musical / Gran Formato", "descripcion": "Gran producción de alto riesgo y alta recompensa.", "costo_montaje": 3000, "corte_boleto": 35, "dias_de_trabajo": 6, "aforo_minimo": 200, "dificultad": 4.2, "importancia": 3, "requiere_taquilla": true, "formato_tipo": "mega"},
-	"cortometraje_indie": {"titulo": "Cortometraje Indie", "descripcion": "Proyecto para festivales y prestigio, sin taquilla directa.", "costo_montaje": 1500, "corte_boleto": 0, "dias_de_trabajo": 3, "aforo_minimo": 0, "dificultad": 3.2, "importancia": 3, "requiere_taquilla": false, "formato_tipo": "experimental"}
+	"monologo_bolsillo": {"titulo": "Monólogo de Bolsillo", "descripcion": "Formato pequeño para testear material.", "costo_montaje": 260, "corte_boleto": 14, "dias_de_trabajo": 2, "aforo_minimo": 15, "dificultad": 1.7, "importancia": 1, "requiere_taquilla": true, "formato_tipo": "intimo"},
+	"obra_reparto": {"titulo": "Obra de Reparto", "descripcion": "Montaje estándar con elenco completo.", "costo_montaje": 1050, "corte_boleto": 23, "dias_de_trabajo": 4, "aforo_minimo": 50, "dificultad": 2.8, "importancia": 2, "requiere_taquilla": true, "formato_tipo": "experimental"},
+	"musical_gran_formato": {"titulo": "Musical / Gran Formato", "descripcion": "Gran producción de alto riesgo y alta recompensa.", "costo_montaje": 3900, "corte_boleto": 38, "dias_de_trabajo": 6, "aforo_minimo": 200, "dificultad": 4.2, "importancia": 3, "requiere_taquilla": true, "formato_tipo": "mega"},
+	"cortometraje_indie": {"titulo": "Cortometraje Indie", "descripcion": "Proyecto para festivales y prestigio, sin taquilla directa.", "costo_montaje": 1800, "corte_boleto": 0, "dias_de_trabajo": 3, "aforo_minimo": 0, "dificultad": 3.2, "importancia": 3, "requiere_taquilla": false, "formato_tipo": "experimental"}
 }
 var estado_actual = "normal" # Puede ser: normal, inspirado, torpe, viral, resaca
 var hitos_redes = {
@@ -588,7 +588,7 @@ var castings_disponibles = {
 		"titulo": "Extra en Película Z",
 		"descripcion": "Estar parado 12 horas fingiendo ser un zombi.",
 		"stat_requerido": "expresion_corporal", "nivel_minimo": 1, "seguidores_minimos": 0,
-		"paga": 35, "recompensa_xp": 20, "recompensa_seguidores": 5,
+		"paga": 45, "recompensa_xp": 24, "recompensa_seguidores": 5,
 		"dias_de_trabajo": 1, "dificultad": 1,
 		"tipo_pago": "fijo", "importancia": 1
 	},
@@ -604,7 +604,7 @@ var castings_disponibles = {
 		"titulo": "Animador Infantil",
 		"descripcion": "Disfrazarte de perrito y hacer reír a los niños.",
 		"stat_requerido": "carisma", "nivel_minimo": 2, "seguidores_minimos": 0,
-		"paga": 80, "recompensa_xp": 30, "recompensa_seguidores": 5,
+		"paga": 95, "recompensa_xp": 34, "recompensa_seguidores": 5,
 		"dias_de_trabajo": 1, "dificultad": 1,
 		"tipo_pago": "fijo", "importancia": 1
 	},
@@ -630,7 +630,7 @@ var castings_disponibles = {
 		"titulo": "Voz Juego Indie",
 		"descripcion": "Grabar desde casa. Requiere buena técnica vocal.",
 		"stat_requerido": "tecnica_vocal", "nivel_minimo": 2, "seguidores_minimos": 50,
-		"paga": 250, "recompensa_xp": 100, "recompensa_seguidores": 40,
+		"paga": 280, "recompensa_xp": 110, "recompensa_seguidores": 40,
 		"dias_de_trabajo": 2, "dificultad": 2,
 		"tipo_pago": "fijo", "importancia": 2
 	},
@@ -638,7 +638,7 @@ var castings_disponibles = {
 		"titulo": "Locutor Comercial Radio",
 		"descripcion": "Anunciar ofertas de supermercado con voz grave.",
 		"stat_requerido": "tecnica_vocal", "nivel_minimo": 3, "seguidores_minimos": 100,
-		"paga": 300, "recompensa_xp": 80, "recompensa_seguidores": 60,
+		"paga": 340, "recompensa_xp": 88, "recompensa_seguidores": 60,
 		"dias_de_trabajo": 1, "dificultad": 2,
 		"tipo_pago": "fijo", "importancia": 2
 	},
@@ -646,7 +646,7 @@ var castings_disponibles = {
 		"titulo": "Comercial TV Local",
 		"descripcion": "Paga bien, pero necesitas sonreír muchísimo.",
 		"stat_requerido": "carisma", "nivel_minimo": 3, "seguidores_minimos": 200, 
-		"paga": 450, "recompensa_xp": 60, "recompensa_seguidores": 120,
+		"paga": 520, "recompensa_xp": 68, "recompensa_seguidores": 120,
 		"dias_de_trabajo": 1, "dificultad": 3,
 		"tipo_pago": "fijo", "importancia": 2
 	},
@@ -680,7 +680,7 @@ var castings_disponibles = {
 		"titulo": "Papel Secundario Serie",
 		"descripcion": "Apareces en 3 capítulos. ¡Tu cara estará en todos lados!",
 		"stat_requerido": "memoria", "nivel_minimo": 4, "seguidores_minimos": 800, 
-		"paga": 2000, "recompensa_xp": 400, "recompensa_seguidores": 1000,
+		"paga": 2200, "recompensa_xp": 430, "recompensa_seguidores": 1000,
 		"dias_de_trabajo": 4, "dificultad": 3,
 		"tipo_pago": "fijo", "importancia": 3
 	},
@@ -688,7 +688,7 @@ var castings_disponibles = {
 		"titulo": "Embajador Marca Global",
 		"descripcion": "Solo les importa tu fama. Eres una cara bonita que vende.",
 		"stat_requerido": "carisma", "nivel_minimo": 4, "seguidores_minimos": 2000, 
-		"paga": 4000, "recompensa_xp": 100, "recompensa_seguidores": 2500,
+		"paga": 4400, "recompensa_xp": 115, "recompensa_seguidores": 2500,
 		"dias_de_trabajo": 2, "dificultad": 2,
 		"tipo_pago": "fijo", "importancia": 3
 	},
@@ -749,7 +749,7 @@ func reiniciar_datos():
 	ultimo_id_carta_instancia = 0
 	agentes_slots = ["", "", ""]
 	agentes_poseidos.clear()
-	economia = {"dinero": 250, "deuda_bancaria": 0}
+	economia = {"dinero": 320, "deuda_bancaria": 0}
 	stats_actor = {"energia_actual": 3, "energia_maxima": 3, "reputacion": 0, "seguidores": 1, "contactos": 0, "estres": 0, "ego": 0}
 	perfil_actor = {
 	"metodo": 0,     
