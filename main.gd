@@ -7,10 +7,10 @@ extends Node2D
 @onready var label_energia = $CapaUI/LabelEnergia
 @onready var label_estres = $CapaUI/LabelEstres
 @onready var label_ego = $CapaUI/LabelEgo
-@onready var label_nivel = $CapaUI/PanelStats/VBoxContainer/LabelNivel
-@onready var label_stats = $CapaUI/PanelStats/VBoxContainer/LabelStats
+@onready var label_nivel = $CapaUI/LabelNivel
+@onready var label_stats = $CapaUI/LabelStats
 @onready var label_arquetipo = $CapaUI/LabelArquetipo
-@onready var label_proyectos = $CapaUI/PanelStats/VBoxContainer/LabelProyectos # <--- NUEVO MEDIDOR
+@onready var label_proyectos = $CapaUI/LabelStats # <--- NUEVO MEDIDOR
 @onready var panel_level_up = $CapaUI/PanelLevelUp
 @onready var panel_contactos = $CapaUI/LabelContactos
 # --- REFERENCIAS CARTAS / BALASIM ---
