@@ -288,17 +288,19 @@ func actualizar_interfaz():
 	elif arq == "forma": texto_arq = "Perfil: Clásico (Anti-Sabotaje, -50% Fans)"
 	elif arq == "comercial": texto_arq = "Perfil: Comercial (+50% Dinero, Ego x2)"
 	elif arq == "instinto": texto_arq = "Perfil: Instintivo (+2s en Minijuegos, -50% XP)"
-	var agentes_txt = "\n🎲 Agentes: "
+	var agentes_txt = "🎲 Contactos equipados: "
 	var equipados = _contactos_activos_ordenados()
 	for i in range(3):
 		if i >= equipados.size():
-			agentes_txt += "[Contacto " + str(i + 1) + ": vacío] "
+			agentes_txt += "[" + str(i + 1) + ": vacío] "
 			continue
 		var c = equipados[i]
 		var bonus_txt = _resumen_bonus_contacto(c)
 		agentes_txt += "[" + str(i + 1) + ": " + str(c.get("nombre", "Contacto")) + " · " + bonus_txt + "] "
-	texto_arq += agentes_txt
 	label_arquetipo.text = texto_arq
+	if panel_contactos != null and panel_contactos is Label:
+		panel_contactos.text = agentes_txt
+		panel_contactos.visible = true
 	label_stats.text = "Voz: " + str(Datos.habilidades_actor["tecnica_vocal"]) + "\nCuerpo: " + str(Datos.habilidades_actor["expresion_corporal"]) + "\nCarisma: " + str(Datos.habilidades_actor["carisma"]) + "\nMemoria: " + str(Datos.habilidades_actor["memoria"])
 
 	if ha_trabajado_hoy:
@@ -332,7 +334,13 @@ func actualizar_interfaz():
 			if proy.has("tipo_pago") and proy["tipo_pago"] == "taquilla":
 				var aforo_total = _aforo_maximo_proyecto(proy)
 				var boletos_estimados = _estimar_boletos_proyecto(proy, estrellas_est, aforo_total)
-				texto_medidor += "   🎟️ Boletos: " + str(boletos_estimados) + "/" + str(aforo_total) + " | Hype " + str(proy.get("hype_generado", 0)) + "\n"
+				var venta_jugador = _boletos_jugador_estimados(proy, boletos_estimados)
+				var pct_jugador = int(round((float(venta_jugador) / max(1.0, float(aforo_total))) * 100.0))
+				texto_medidor += "   🎟️ Boletos: " + str(boletos_estimados) + "/" + str(aforo_total) + " | Tu venta: " + str(venta_jugador) + " (" + str(pct_jugador) + "%) | Hype " + str(proy.get("hype_generado", 0)) + "\n"
+				if bool(proy.get("es_propia", false)) and int(proy.get("inversion_total", 0)) > 0:
+					var ingreso_ticket = max(1.0, float(proy.get("corte_boleto", 1)) * float(proy.get("porcentaje_ganancia", 1.0)))
+					var boletos_equilibrio = int(ceil(float(proy.get("inversion_total", 0)) / ingreso_ticket))
+					texto_medidor += "   ⚖️ Equilibrio: " + str(boletos_equilibrio) + " boletos para recuperar inversión\n"
 
 		label_proyectos.text = texto_medidor
 		label_proyectos.visible = true
@@ -1109,14 +1117,18 @@ func resolver_rutina_general(fue_exito):
 		ha_trabajado_hoy = true
 		Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] + 15, 0, 100) # +15 Estrés
 		if fue_exito:
-			var pago = randi_range(60, 90)
+			var nvl = int(Datos.habilidades_actor.get("nivel_general", 1))
+			var car = int(Datos.habilidades_actor.get("carisma", 1))
+			var pago = 58 + (nvl * 8) + (car * 4) + randi_range(-8, 18)
 			if Datos.estado_actual == "suerte": pago += 30
 			elif Datos.estado_actual == "torpe": pago -= 20
+			pago = max(40, pago)
 			Datos.economia["dinero"] += pago
 			var hist = GestorTextos.obtener_texto("trabajo_exito")
 			mostrar_alerta(hist.titulo, hist.desc + "\n\nGanaste: $" + str(pago))
 		else:
-			var pago = 30
+			var nvl = int(Datos.habilidades_actor.get("nivel_general", 1))
+			var pago = max(25, 28 + (nvl * 5))
 			Datos.economia["dinero"] += pago
 			var hist = GestorTextos.obtener_texto("trabajo_fallo")
 			mostrar_alerta(hist.titulo, hist.desc + "\n\nGanaste solo: $" + str(pago))
@@ -1272,18 +1284,53 @@ func _aforo_maximo_proyecto(c: Dictionary) -> int:
 func _estimar_boletos_proyecto(c: Dictionary, estrellas_estimadas: int = 3, aforo_total: int = -1) -> int:
 	if aforo_total <= 0:
 		aforo_total = _aforo_maximo_proyecto(c)
-	var base_aud = int(c.get("importancia", 1)) * 20
+	var base_aud = int(c.get("importancia", 1)) * 22
 	if c.has("es_propia"):
 		base_aud += int(c.get("influencia_equipo", 0)) * 3
 	var seguidores = int(Datos.stats_actor.get("seguidores", 0))
 	var hype = int(c.get("hype_generado", 0))
+	var preventa = int(c.get("boletos_prevendidos", 0))
 	var promo_calidad = 1.0 + clamp(float(Datos.habilidades_actor.get("carisma", 1)) * 0.05, 0.0, 0.4)
 	if bool(Datos.mejoras_simzon.get("aro_luz", false)):
 		promo_calidad *= 1.15
-	var produccion_nivel = clamp(0.75 + (float(estrellas_estimadas) * 0.1), 0.75, 1.35)
+	var volatilidad = float(c.get("volatilidad", 20))
+	var estabilizador = clamp((100.0 - volatilidad) / 100.0, 0.55, 1.0)
+	var produccion_nivel = clamp(0.8 + (float(estrellas_estimadas) * 0.11), 0.8, 1.42)
 	var hype_total = int((hype + int(float(seguidores) * 0.1) + int(Datos.lista_contactos.size() * 2)) * promo_calidad)
-	var boletos = int((base_aud + hype_total) * produccion_nivel)
+	var piso = max(3, int(float(aforo_total) * 0.05 * estabilizador))
+	var boletos = int((base_aud + hype_total + preventa) * produccion_nivel)
+	boletos = max(boletos, piso + preventa)
 	return clamp(boletos, 0, aforo_total)
+
+func _boletos_jugador_estimados(c: Dictionary, boletos_totales: int) -> int:
+	var base = 0.4 + (float(Datos.habilidades_actor.get("carisma", 1)) * 0.04)
+	if bool(c.get("es_propia", false)):
+		base += 0.1
+	base = clamp(base, 0.35, 0.88)
+	return int(round(float(boletos_totales) * base))
+
+func _actualizar_preventa_diaria():
+	for id_p in Datos.proyectos_activos.keys():
+		if id_p == "temp":
+			continue
+		var p = Datos.proyectos_activos[id_p]
+		if str(p.get("tipo_pago", "")) != "taquilla":
+			continue
+		var aforo = _aforo_maximo_proyecto(p)
+		var base = 3 + int(p.get("importancia", 1)) * 2
+		var hype = int(p.get("hype_generado", 0))
+		var pull_redes = int(Datos.stats_actor.get("seguidores", 0) / 120)
+		var activos = _contactos_activos_ordenados().size()
+		var bonus_contactos = activos * 2 + int(Datos.lista_contactos.size() / 8)
+		var rend = float(p.get("rendimiento_acumulado", 0.0))
+		var max_rend = max(1.0, float(int(p.get("dias_de_trabajo", 1)) + 1))
+		var impulso_ensayo = int((rend / max_rend) * 7.0)
+		var delta = base + int(hype / 35) + pull_redes + bonus_contactos + impulso_ensayo
+		if _tiene_mejora_local(str(Datos.mi_compania.get("id_espacio_actual", "sala_casa")), "vallas"):
+			delta += 5
+		var acumulado = int(p.get("boletos_prevendidos", 0)) + max(1, delta)
+		p["boletos_prevendidos"] = clamp(acumulado, 0, max(0, aforo - 1))
+		Datos.proyectos_activos[id_p] = p
 
 func _estado_contrato_renta() -> Dictionary:
 	var c = Datos.mi_compania.get("contrato_renta", {"id_espacio": "sala_casa", "vence_dia": -1})
@@ -1352,6 +1399,7 @@ func _procesar_fin_dia():
 		Datos.mi_compania["contrato_renta"] = {"id_espacio": "sala_casa", "vence_dia": -1}
 	actualizar_temporada_si_aplica()
 	_actualizar_afinidad_contactos_fin_dia()
+	_actualizar_preventa_diaria()
 	if Datos.mi_compania.has("espacios_propios") and not _hay_produccion_propia_activa():
 		var ingreso_sub = 0
 		for e in Datos.mi_compania["espacios_propios"]:
@@ -1382,7 +1430,7 @@ func _procesar_fin_dia():
 
 	# --- COSTO DE ESTILO DE VIDA ---
 	# Empieza en $15, pero sube $5 por cada nivel que tengas
-	var costo_vida = 8 + (Datos.habilidades_actor["nivel_general"] * 3)
+	var costo_vida = 10 + (Datos.habilidades_actor["nivel_general"] * 4)
 	Datos.economia["dinero"] -= costo_vida
 
 	# Le avisamos al jugador si le cobraron mucho
@@ -1415,10 +1463,11 @@ func _procesar_fin_dia():
 		var renta_espacio = Datos.espacios_disponibles[espacio_id]["renta_mensual"]
 		if _espacio_es_propietario(espacio_id):
 			renta_espacio = 0
-		var renta_total = 300 + renta_espacio
+		var renta_base_depa = 240 + (max(0, Datos.habilidades_actor["nivel_general"] - 1) * 6)
+		var renta_total = renta_base_depa + renta_espacio
 
 		var texto_renta = "Desglose de Renta Mensual:\n"
-		texto_renta += "🏠 Departamento: -$300\n"
+		texto_renta += "🏠 Departamento: -$" + str(renta_base_depa) + "\n"
 		texto_renta += "🏢 Local (" + Datos.espacios_disponibles[espacio_id]["nombre"] + "): -$" + str(renta_espacio) + "\n"
 		texto_renta += "TOTAL PAGADO: -$" + str(renta_total) + "\n"
 
@@ -1666,15 +1715,25 @@ func _perfil_escalado_casting_core(id_base: String, base_casting: Dictionary, pr
 		xp_obj = int(xp_obj * 1.25)
 
 	# Seguridad por tier
+	var paga_min = 0
+	var paga_max = 999999
 	if imp == 1:
 		dificultad_obj = clamp(dificultad_obj, 1.0, 2.6)
 		seg_obj = clamp(seg_obj, 0, 280)
+		paga_min = 30
+		paga_max = 220
 	elif imp == 2:
 		dificultad_obj = clamp(dificultad_obj, 2.0, 4.4)
 		seg_obj = clamp(seg_obj, 60, 1200)
+		paga_min = 120
+		paga_max = 900
 	else:
 		dificultad_obj = clamp(dificultad_obj, 3.2, 6.8)
 		seg_obj = clamp(seg_obj, 300, 6500)
+		paga_min = 600
+		paga_max = 6500
+
+	paga_obj = clamp(paga_obj, paga_min, paga_max)
 
 	return {
 		"dificultad": snapped(dificultad_obj, 0.1),
@@ -1839,6 +1898,7 @@ func generar_castings_del_dia():
 		base_casting["id_unico"] = id_base + "_dia" + str(Datos.tiempo["dia"]) + "_" + str(i)
 		base_casting["rendimiento_acumulado"] = 0
 		base_casting["hype_generado"] = 0
+		base_casting["boletos_prevendidos"] = randi_range(2, 10) * int(base_casting.get("importancia", 1))
 		base_casting["book_req"] = {}
 		if nivel_generado >= 6 and tier >= 3:
 			base_casting["book_req"] = {"tier3_4est": 2, "sold_outs": 1}
@@ -2200,10 +2260,29 @@ func _requisitos_fundar_compania() -> Dictionary:
 	if _buscar_mejor_contacto_activo_por_rol("Director") == null or _buscar_mejor_contacto_activo_por_rol("Guionista") == null:
 		out["ok"] = false
 		out["faltantes"].append("Tener Director + Guionista equipados.")
-	if int(Datos.economia.get("dinero", 0)) < 300:
+	if int(Datos.economia.get("dinero", 0)) < 450:
 		out["ok"] = false
-		out["faltantes"].append("$300 para trámites y arranque.")
+		out["faltantes"].append("$450 para trámites y arranque.")
 	return out
+
+func _seleccionar_proyecto_taquilla_objetivo() -> String:
+	var elegido = ""
+	var mejor_score = -INF
+	for id_p in Datos.proyectos_activos.keys():
+		if id_p == "temp":
+			continue
+		var p = Datos.proyectos_activos[id_p]
+		if str(p.get("tipo_pago", "")) != "taquilla":
+			continue
+		var aforo = max(1, _aforo_maximo_proyecto(p))
+		var prev = int(p.get("boletos_prevendidos", 0))
+		var hueco = clamp(1.0 - (float(prev) / float(aforo)), 0.0, 1.0)
+		var peso_propia = 1.25 if bool(p.get("es_propia", false)) else 1.0
+		var score = (hueco * 100.0) * peso_propia + float(p.get("importancia", 1)) * 7.0
+		if score > mejor_score:
+			mejor_score = score
+			elegido = id_p
+	return elegido
 
 func _actualizar_tier_compania():
 	var prestigio = int(Datos.mi_compania.get("prestigio", 0))
@@ -2346,6 +2425,7 @@ func alternar_contacto_activo(idx: int):
 			return
 	c["activo"] = activar
 	Datos.lista_contactos[idx] = c
+	actualizar_interfaz()
 	_on_btn_app_contactos_pressed()
 
 func _on_btn_ir_networking_pressed():
@@ -2509,10 +2589,10 @@ func _configurar_tienda_simzon_extra():
 		return
 	simzon_extra_creado = true
 	var items = [
-		{"txt": "Toro Rojo ($25) [+1 Energía, +10 Estrés]", "fn": Callable(self, "_comprar_toro_rojo")},
+		{"txt": "Toro Rojo ($30) [+1 Energía, +10 Estrés]", "fn": Callable(self, "_comprar_toro_rojo")},
 		{"txt": "Té de Manzanilla Premium ($20) [-15 Estrés]", "fn": Callable(self, "_comprar_te_manzanilla")},
 		{"txt": "Aro de Luz Profesional ($480) [Pasivo +15% Reel]", "fn": Callable(self, "_comprar_aro_luz")},
-		{"txt": "Campaña Ads SimGram ($120) [+80 Boletos al proyecto actual]", "fn": Callable(self, "_comprar_ads_simgram")},
+		{"txt": "Campaña Ads SimGram ($120) [+80 Hype y +25 Preventa]", "fn": Callable(self, "_comprar_ads_simgram")},
 		{"txt": "Suscripción App Meditación ($350) [Pasivo -5 Estrés/noche]", "fn": Callable(self, "_comprar_suscripcion_meditacion")},
 		{"txt": "Set de Utilería para Casa ($300) [Pasivo +20% XP Monólogo]", "fn": Callable(self, "_comprar_set_utileria")},
 		{"txt": "Micrófono de Solapa Inalámbrico ($900) [+1 Técnica Vocal]", "fn": Callable(self, "_comprar_microfono_solapa")}
@@ -2525,10 +2605,10 @@ func _configurar_tienda_simzon_extra():
 		contenedor_tienda.add_child(b)
 
 func _comprar_toro_rojo():
-	if Datos.economia["dinero"] < 25:
-		mostrar_alerta("Sin dinero", "Necesitas $25.")
+	if Datos.economia["dinero"] < 30:
+		mostrar_alerta("Sin dinero", "Necesitas $30.")
 		return
-	Datos.economia["dinero"] -= 25
+	Datos.economia["dinero"] -= 30
 	Datos.stats_actor["energia_actual"] = min(Datos.stats_actor["energia_maxima"], Datos.stats_actor["energia_actual"] + 1)
 	Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] + 10, 0, 100)
 	actualizar_interfaz()
@@ -2554,16 +2634,20 @@ func _comprar_ads_simgram():
 	if Datos.economia["dinero"] < 120:
 		mostrar_alerta("Sin dinero", "Necesitas $120.")
 		return
-	var id_obj = ""
-	for id_p in Datos.proyectos_activos.keys():
-		if Datos.proyectos_activos[id_p].get("tipo_pago", "") == "taquilla":
-			id_obj = id_p
-			break
+	var id_obj = _seleccionar_proyecto_taquilla_objetivo()
 	if id_obj == "":
 		mostrar_alerta("Sin objetivo", "No tienes producción de taquilla activa.")
 		return
 	Datos.economia["dinero"] -= 120
 	Datos.proyectos_activos[id_obj]["hype_generado"] = int(Datos.proyectos_activos[id_obj].get("hype_generado", 0)) + 80
+	var aforo_obj = _aforo_maximo_proyecto(Datos.proyectos_activos[id_obj])
+	var prev_actual = int(Datos.proyectos_activos[id_obj].get("boletos_prevendidos", 0))
+	var boost_prev = 25
+	if prev_actual >= int(aforo_obj * 0.85):
+		boost_prev = 12
+	Datos.proyectos_activos[id_obj]["boletos_prevendidos"] = clamp(prev_actual + boost_prev, 0, max(0, aforo_obj - 1))
+	var nom = str(Datos.proyectos_activos[id_obj].get("titulo_unico", "Proyecto")).split("\n")[-1]
+	mostrar_alerta("📣 Campaña activa", "Impulsaste la preventa de '" + nom + "' (+" + str(boost_prev) + " boletos).")
 	actualizar_interfaz()
 
 func _comprar_suscripcion_meditacion():
@@ -2941,10 +3025,10 @@ func _mostrar_mejoras_local(id_espacio: String):
 	popup.get_ok_button().visible = false
 	add_child(popup)
 	var vb = VBoxContainer.new(); popup.add_child(vb)
-	var b1 = Button.new(); b1.text = "Sistema Luces LED ($900)"; b1.pressed.connect(func(): _comprar_mejora_local(id_espacio, "luces_led", 900)); vb.add_child(b1)
-	var b2 = Button.new(); b2.text = "Cafetería Lobby ($450)"; b2.pressed.connect(func(): _comprar_mejora_local(id_espacio, "cafeteria", 450)); vb.add_child(b2)
-	var b3 = Button.new(); b3.text = "Asientos VIP ($1800)"; b3.pressed.connect(func(): _comprar_mejora_local(id_espacio, "asientos_vip", 1800)); vb.add_child(b3)
-	var b4 = Button.new(); b4.text = "Vallas Publicitarias ($2200)"; b4.pressed.connect(func(): _comprar_mejora_local(id_espacio, "vallas", 2200)); vb.add_child(b4)
+	var b1 = Button.new(); b1.text = "Sistema Luces LED ($1200)"; b1.pressed.connect(func(): _comprar_mejora_local(id_espacio, "luces_led", 1200)); vb.add_child(b1)
+	var b2 = Button.new(); b2.text = "Cafetería Lobby ($700)"; b2.pressed.connect(func(): _comprar_mejora_local(id_espacio, "cafeteria", 700)); vb.add_child(b2)
+	var b3 = Button.new(); b3.text = "Asientos VIP ($2400)"; b3.pressed.connect(func(): _comprar_mejora_local(id_espacio, "asientos_vip", 2400)); vb.add_child(b3)
+	var b4 = Button.new(); b4.text = "Vallas Publicitarias ($3200)"; b4.pressed.connect(func(): _comprar_mejora_local(id_espacio, "vallas", 3200)); vb.add_child(b4)
 	var bx = Button.new(); bx.text = "Cerrar"; bx.pressed.connect(func(): popup.hide()); vb.add_child(bx)
 	popup.popup_centered(Vector2i(520, 320))
 
@@ -3054,7 +3138,7 @@ func lanzar_produccion_propia(id_formato, director, guionista, productor):
 		return
 	Datos.economia["dinero"] -= costo_jugador
 
-	var id_unico = "prod_propia_" + str(Datos.tiempo["dia"])
+	var id_unico = "prod_propia_" + str(Datos.tiempo["dia"]) + "_" + str(Time.get_ticks_msec())
 	var titulo_obra = GestorTextos.generar_titulo_produccion("teatro")
 	var tier_dir = _tier_contacto(director)
 	var tier_gui = _tier_contacto(guionista)
@@ -3077,6 +3161,8 @@ func lanzar_produccion_propia(id_formato, director, guionista, productor):
 		"recompensa_seguidores": 25 + (tier_gui * 20),
 		"rendimiento_acumulado": 0,
 		"hype_generado": int(8 * tier_gui + _bonos_contactos_equipados().get("hype_flat", 0)),
+		"boletos_prevendidos": max(0, int(4 * tier_gui + Datos.stats_actor.get("seguidores", 0) / 180)),
+		"inversion_total": costo_jugador,
 		"formato_tipo": str(formato.get("formato_tipo", "intimo"))
 	}
 	var esp_act = str(Datos.mi_compania.get("id_espacio_actual", "sala_casa"))
@@ -3296,6 +3382,9 @@ func publicar_reel_seleccionado(id_eleccion):
 			if bool(Datos.mejoras_simzon.get("aro_luz", false)):
 				mult_promo *= 1.15
 			proy["hype_generado"] += int(hype_base * mult_promo)
+			var aforo_mark = _aforo_maximo_proyecto(proy)
+			proy["boletos_prevendidos"] = clamp(int(proy.get("boletos_prevendidos", 0)) + max(4, int(hype_base * 0.35)), 0, max(0, aforo_mark - 1))
+			Datos.proyectos_activos[id_eleccion] = proy
 			var bonus_fans = int((10 + Datos.habilidades_actor["carisma"] * 2) * 1.1 * mult_promo)
 			sumar_seguidores(bonus_fans)
 
@@ -3363,14 +3452,14 @@ func _on_btn_renombrar_compania_pressed():
 	if nuevo_nombre == "":
 		mostrar_alerta("Nombre Inválido", "El nombre no puede estar vacío.")
 	else:
-		Datos.economia["dinero"] -= 300
+		Datos.economia["dinero"] -= 450
 		Datos.mi_compania["nombre"] = nuevo_nombre
 		Datos.mi_compania["fundada"] = true # <--- ¡SE SELLA PARA SIEMPRE!
 		Datos.mi_compania["prestigio"] = max(10, int(Datos.mi_compania.get("prestigio", 0)))
 		_actualizar_tier_compania()
 		input_nombre_compania.editable = false # Bloquea la edición visual
 
-		mostrar_alerta("Trámite Legal Listo", "Pagaste -$300 en constitución legal y operación inicial.\nTu compañía ahora está registrada como:\n\n" + nuevo_nombre)
+		mostrar_alerta("Trámite Legal Listo", "Pagaste -$450 en constitución legal y operación inicial.\nTu compañía ahora está registrada como:\n\n" + nuevo_nombre)
 		publicar_auto("¡Gente! Oficialmente he fundado y registrado mi propia compañía. Sigan a " + nuevo_nombre + " para próximos proyectos. 🥂🎬")
 		actualizar_interfaz()
 # ==========================================
@@ -3403,10 +3492,10 @@ func _costo_restaurar_instancia(id_inst: String) -> int:
 		return 0
 	var nivel = Datos.obtener_nivel_carta(id_inst)
 	var rareza = str(info.get("rareza", "Común"))
-	var base = 20
-	if rareza == "Rara": base = 40
-	elif rareza == "Épica": base = 75
-	elif rareza == "Legendaria": base = 140
+	var base = 22
+	if rareza == "Rara": base = 46
+	elif rareza == "Épica": base = 88
+	elif rareza == "Legendaria": base = 170
 	return int(base + (nivel - 1) * (base * 0.25))
 
 func _instancias_agotadas_por_base(id_base: String) -> Array:
@@ -3594,9 +3683,9 @@ func _on_btn_fusionar_cartas_pressed():
 		var rareza = info_resultado["rareza"]
 
 		# Definimos el costo
-		var costo = 20
-		if rareza == "Épica": costo = 150
-		elif rareza == "Legendaria": costo = 1000
+		var costo = 28
+		if rareza == "Épica": costo = 190
+		elif rareza == "Legendaria": costo = 1200
 
 		var ingredientes = Datos.recetas_crafteo[id_resultado]
 		var ing1 = ingredientes[0]
@@ -4376,7 +4465,7 @@ func comprar_curso(tipo_curso):
 
 	# 2. Definir Costos y Recompensas según el curso
 	if tipo_curso == "basico":
-		costo = 50; costo_energia = 1
+		costo = 65; costo_energia = 1
 		if comprobar_pago_clase(costo, costo_energia):
 			var pesos = _ajustar_pesos_por_curso(_pesos_base_por_nivel(nivel), "basico")
 			for i in range(4):
@@ -4384,7 +4473,7 @@ func comprar_curso(tipo_curso):
 				cartas_ganadas.append(_elegir_carta_por_rareza(pools, rareza))
 
 	elif tipo_curso == "medio":
-		costo = 250; costo_energia = 2
+		costo = 310; costo_energia = 2
 		if comprobar_pago_clase(costo, costo_energia):
 			var pesos = _ajustar_pesos_por_curso(_pesos_base_por_nivel(nivel), "medio")
 			for i in range(3):
@@ -4392,7 +4481,7 @@ func comprar_curso(tipo_curso):
 				cartas_ganadas.append(_elegir_carta_por_rareza(pools, rareza))
 
 	elif tipo_curso == "pro":
-		costo = 1000; costo_energia = 3
+		costo = 1150; costo_energia = 3
 		if comprobar_pago_clase(costo, costo_energia):
 			var pesos = _ajustar_pesos_por_curso(_pesos_base_por_nivel(nivel), "pro")
 			for i in range(3):
@@ -4568,7 +4657,7 @@ func abrir_tienda_cartas():
 	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
 
 	var btn_generar = Button.new()
-	var costo_gen = 120 + int(Datos.habilidades_actor.get("nivel_general", 1) * 35)
+	var costo_gen = 135 + int(Datos.habilidades_actor.get("nivel_general", 1) * 38)
 	btn_generar.text = "🧪 Generar Técnica Aleatoria ($" + str(costo_gen) + ")"
 	btn_generar.custom_minimum_size = Vector2(250, 50)
 	btn_generar.pressed.connect(func():
