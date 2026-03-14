@@ -2260,10 +2260,29 @@ func _requisitos_fundar_compania() -> Dictionary:
 	if _buscar_mejor_contacto_activo_por_rol("Director") == null or _buscar_mejor_contacto_activo_por_rol("Guionista") == null:
 		out["ok"] = false
 		out["faltantes"].append("Tener Director + Guionista equipados.")
-	if int(Datos.economia.get("dinero", 0)) < 300:
+	if int(Datos.economia.get("dinero", 0)) < 450:
 		out["ok"] = false
-		out["faltantes"].append("$300 para trámites y arranque.")
+		out["faltantes"].append("$450 para trámites y arranque.")
 	return out
+
+func _seleccionar_proyecto_taquilla_objetivo() -> String:
+	var elegido = ""
+	var mejor_score = -INF
+	for id_p in Datos.proyectos_activos.keys():
+		if id_p == "temp":
+			continue
+		var p = Datos.proyectos_activos[id_p]
+		if str(p.get("tipo_pago", "")) != "taquilla":
+			continue
+		var aforo = max(1, _aforo_maximo_proyecto(p))
+		var prev = int(p.get("boletos_prevendidos", 0))
+		var hueco = clamp(1.0 - (float(prev) / float(aforo)), 0.0, 1.0)
+		var peso_propia = 1.25 if bool(p.get("es_propia", false)) else 1.0
+		var score = (hueco * 100.0) * peso_propia + float(p.get("importancia", 1)) * 7.0
+		if score > mejor_score:
+			mejor_score = score
+			elegido = id_p
+	return elegido
 
 func _actualizar_tier_compania():
 	var prestigio = int(Datos.mi_compania.get("prestigio", 0))
@@ -2615,18 +2634,20 @@ func _comprar_ads_simgram():
 	if Datos.economia["dinero"] < 120:
 		mostrar_alerta("Sin dinero", "Necesitas $120.")
 		return
-	var id_obj = ""
-	for id_p in Datos.proyectos_activos.keys():
-		if Datos.proyectos_activos[id_p].get("tipo_pago", "") == "taquilla":
-			id_obj = id_p
-			break
+	var id_obj = _seleccionar_proyecto_taquilla_objetivo()
 	if id_obj == "":
 		mostrar_alerta("Sin objetivo", "No tienes producción de taquilla activa.")
 		return
 	Datos.economia["dinero"] -= 120
 	Datos.proyectos_activos[id_obj]["hype_generado"] = int(Datos.proyectos_activos[id_obj].get("hype_generado", 0)) + 80
 	var aforo_obj = _aforo_maximo_proyecto(Datos.proyectos_activos[id_obj])
-	Datos.proyectos_activos[id_obj]["boletos_prevendidos"] = clamp(int(Datos.proyectos_activos[id_obj].get("boletos_prevendidos", 0)) + 25, 0, max(0, aforo_obj - 1))
+	var prev_actual = int(Datos.proyectos_activos[id_obj].get("boletos_prevendidos", 0))
+	var boost_prev = 25
+	if prev_actual >= int(aforo_obj * 0.85):
+		boost_prev = 12
+	Datos.proyectos_activos[id_obj]["boletos_prevendidos"] = clamp(prev_actual + boost_prev, 0, max(0, aforo_obj - 1))
+	var nom = str(Datos.proyectos_activos[id_obj].get("titulo_unico", "Proyecto")).split("\n")[-1]
+	mostrar_alerta("📣 Campaña activa", "Impulsaste la preventa de '" + nom + "' (+" + str(boost_prev) + " boletos).")
 	actualizar_interfaz()
 
 func _comprar_suscripcion_meditacion():
@@ -3117,7 +3138,7 @@ func lanzar_produccion_propia(id_formato, director, guionista, productor):
 		return
 	Datos.economia["dinero"] -= costo_jugador
 
-	var id_unico = "prod_propia_" + str(Datos.tiempo["dia"])
+	var id_unico = "prod_propia_" + str(Datos.tiempo["dia"]) + "_" + str(Time.get_ticks_msec())
 	var titulo_obra = GestorTextos.generar_titulo_produccion("teatro")
 	var tier_dir = _tier_contacto(director)
 	var tier_gui = _tier_contacto(guionista)
@@ -3363,6 +3384,7 @@ func publicar_reel_seleccionado(id_eleccion):
 			proy["hype_generado"] += int(hype_base * mult_promo)
 			var aforo_mark = _aforo_maximo_proyecto(proy)
 			proy["boletos_prevendidos"] = clamp(int(proy.get("boletos_prevendidos", 0)) + max(4, int(hype_base * 0.35)), 0, max(0, aforo_mark - 1))
+			Datos.proyectos_activos[id_eleccion] = proy
 			var bonus_fans = int((10 + Datos.habilidades_actor["carisma"] * 2) * 1.1 * mult_promo)
 			sumar_seguidores(bonus_fans)
 
