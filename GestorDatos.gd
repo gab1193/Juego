@@ -419,7 +419,12 @@ func calcular_precio_compra_carta(id_carta: String) -> int:
 func calcular_precio_reventa_carta(id_carta: String) -> int:
 	if not catalogo_cartas.has(id_carta):
 		return 0
-	return int(catalogo_cartas[id_carta].get("valor_reventa", 20))
+	var base = int(catalogo_cartas[id_carta].get("valor_reventa", 20))
+	var mejor_nivel = 1
+	for id_i in obtener_instancias_por_base(id_carta, false):
+		mejor_nivel = max(mejor_nivel, obtener_nivel_carta(id_i))
+	var mult_nivel = 1.0 + (max(0, mejor_nivel - 1) * 0.07)
+	return int(round(float(base) * mult_nivel / 5.0) * 5)
 # --- MEGA RECETAS DE CRAFTEO ---
 # ==========================================
 # 🔮 MEGA RECETAS DE CRAFTEO (De Común a Legendaria)
@@ -867,9 +872,25 @@ func calcular_xp_requerida_carta(id_base: String, nivel_actual: int) -> int:
 	var info = catalogo_cartas.get(id_base, {})
 	var rareza = str(info.get("rareza", "Común"))
 	var esc = float(ESCALADO_XP_RAREZA.get(rareza, 1.0))
+	if rareza == "Rara":
+		esc *= 1.08
+	elif rareza == "Épica":
+		esc *= 1.18
+	elif rareza == "Legendaria":
+		esc *= 1.35
 	var n = max(1, nivel_actual)
 	var base = 80 + int((n - 1) * 35) + int(pow(max(0, n - 1), 1.22) * 9.0)
 	return int(round(float(base) * esc))
+
+func max_nivel_carta_por_id(id_base: String) -> int:
+	var rareza = str(catalogo_cartas.get(id_base, {}).get("rareza", "Común"))
+	if rareza == "Legendaria":
+		return 6
+	if rareza == "Épica":
+		return 8
+	if rareza == "Rara":
+		return 10
+	return 12
 
 func otorgar_xp_carta(id_carta, xp_ganada: int):
 	if xp_ganada <= 0:
@@ -877,17 +898,18 @@ func otorgar_xp_carta(id_carta, xp_ganada: int):
 	if not cartas_instancia.has(id_carta):
 		return
 	var data = cartas_instancia[id_carta]
-	if int(data.get("nivel", 1)) >= NIVEL_MAX_CARTA:
+	var max_nivel = min(NIVEL_MAX_CARTA, max_nivel_carta_por_id(str(data.get("id_base", ""))))
+	if int(data.get("nivel", 1)) >= max_nivel:
 		data["xp_actual"] = 0
 		cartas_instancia[id_carta] = data
 		return
 	data["xp_actual"] = int(data.get("xp_actual", 0)) + xp_ganada
-	while int(data.get("nivel", 1)) < NIVEL_MAX_CARTA and int(data.get("xp_actual", 0)) >= int(data.get("xp_requerida", 100)):
+	while int(data.get("nivel", 1)) < max_nivel and int(data.get("xp_actual", 0)) >= int(data.get("xp_requerida", 100)):
 		data["xp_actual"] -= int(data.get("xp_requerida", 100))
 		data["nivel"] = int(data.get("nivel", 1)) + 1
 		data["xp_requerida"] = calcular_xp_requerida_carta(str(data.get("id_base", "")), int(data.get("nivel", 1)))
-	if int(data.get("nivel", 1)) >= NIVEL_MAX_CARTA:
-		data["nivel"] = NIVEL_MAX_CARTA
+	if int(data.get("nivel", 1)) >= max_nivel:
+		data["nivel"] = max_nivel
 		data["xp_actual"] = 0
 	data["xp_requerida"] = calcular_xp_requerida_carta(str(data.get("id_base", "")), int(data.get("nivel", 1)))
 	cartas_instancia[id_carta] = data

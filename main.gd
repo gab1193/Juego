@@ -129,6 +129,7 @@ var carta_entrenando_id = ""
 @onready var panel_seleccion_ensayo = $CapaUI/PanelSeleccionEnsayo
 @onready var contenedor_opciones_ensayo = $CapaUI/PanelSeleccionEnsayo/VBoxContainer/ContenedorOpcionesEnsayo
 var castings_de_hoy = []
+var agenda_offset_mes = 0
 var rutina_activa = false
 var tipo_rutina = ""
 var cursor_velocidad = 500
@@ -154,6 +155,7 @@ var estadisticas_funcion = {}
 
 var ha_trabajado_hoy = false
 var ha_publicado_hoy = false
+var reels_publicados_hoy = 0
 var ha_ido_mixer_hoy = false
 var cafes_tomados_hoy = 0 # <--- NUEVA VARIABLE DE LÍMITE
 var simzon_extra_creado = false
@@ -263,6 +265,56 @@ func recalcular_stats_pasivos():
 	var tamano_base = 40
 	zona_exito.size.x = tamano_base + (Datos.habilidades_actor["tecnica_vocal"] * 8)
 
+func _max_reels_por_dia() -> int:
+	var base = 1
+	base += int(Datos.habilidades_actor.get("nivel_general", 1) / 4)
+	base += int(Datos.habilidades_actor.get("carisma", 1) / 5)
+	if bool(Datos.mejoras_simzon.get("aro_luz", false)):
+		base += 1
+	return clamp(base, 1, 4)
+
+func _render_agenda_mes(offset_meses: int):
+	for hijo in grid_calendario.get_children():
+		hijo.queue_free()
+	var dia_actual = int(Datos.tiempo["dia"])
+	var cal_ref = _calendario_desde_dia_abs(dia_actual)
+	var anio = int(cal_ref["anio"])
+	var mes_idx = int(cal_ref["mes_idx"]) + offset_meses
+	while mes_idx > 12:
+		mes_idx -= 12
+		anio += 1
+	while mes_idx < 1:
+		mes_idx += 12
+		anio -= 1
+	var dia_inicio = _dia_abs_desde_fecha(anio, mes_idx, 1)
+	var dias_mes = _dias_en_mes(anio, mes_idx)
+	var header = Label.new()
+	header.text = "📅 " + NOMBRES_MESES[mes_idx - 1] + " " + str(anio)
+	header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	header.custom_minimum_size = Vector2(0, 24)
+	grid_calendario.add_child(header)
+	for i in range(dia_inicio, dia_inicio + dias_mes):
+		var btn_dia = Button.new()
+		var cal = _calendario_desde_dia_abs(i)
+		btn_dia.text = str(cal["nombre_dia"]).substr(0, 3) + "\n" + str(cal["dia_mes"])
+		btn_dia.custom_minimum_size = Vector2(45, 45)
+		if i < dia_actual:
+			btn_dia.modulate = Color(0.4, 0.4, 0.4)
+		elif i == dia_actual:
+			btn_dia.modulate = Color(1.0, 0.9, 0.2)
+		elif Datos.agenda.has(i):
+			var evento = str(Datos.agenda[i])
+			if evento == "Pago_Renta":
+				btn_dia.text += "\nR$"
+				btn_dia.modulate = Color(1.0, 0.45, 0.45)
+			else:
+				btn_dia.text += "\n!"
+				btn_dia.modulate = Color(0.2, 0.8, 0.2)
+		else:
+			btn_dia.modulate = Color(1, 1, 1)
+		btn_dia.pressed.connect(_mostrar_detalle_calendario.bind(i))
+		grid_calendario.add_child(btn_dia)
+
 
 
 func actualizar_interfaz():
@@ -364,11 +416,12 @@ func actualizar_interfaz():
 			btn_ensayar.text = "Ensayar Monólogo Libre (-1 E)"
 			btn_ensayar.disabled = false
 
-	if ha_publicado_hoy:
-		btn_publicar_post.text = "Reel (Hecho hoy) 🔒"
+	var max_reels = _max_reels_por_dia()
+	if reels_publicados_hoy >= max_reels:
+		btn_publicar_post.text = "Reel (" + str(reels_publicados_hoy) + "/" + str(max_reels) + ") 🔒"
 		btn_publicar_post.disabled = true
 	else:
-		btn_publicar_post.text = "Subir Reel (-1 E)"
+		btn_publicar_post.text = "Subir Reel (-1 E) [" + str(reels_publicados_hoy) + "/" + str(max_reels) + "]"
 		btn_publicar_post.disabled = false
 
 	if ha_ido_mixer_hoy:
@@ -434,6 +487,16 @@ func _calendario_desde_dia_abs(dia_abs: int) -> Dictionary:
 		"nombre_mes": NOMBRES_MESES[mes_idx],
 		"anio": anio
 	}
+
+func _dia_abs_desde_fecha(anio: int, mes_num: int, dia_mes: int) -> int:
+	var d = 1
+	for a in range(ANIO_BASE, anio):
+		for m in range(12):
+			d += _dias_en_mes(a, m)
+	for m2 in range(mes_num - 1):
+		d += _dias_en_mes(anio, m2)
+	d += max(0, dia_mes - 1)
+	return d
 
 func _ultimo_dia_mes_desde(dia_abs: int) -> int:
 	var cal = _calendario_desde_dia_abs(dia_abs)
@@ -1335,10 +1398,30 @@ func _mostrar_confirmacion_fin_dia():
 		popup_confirmar_dia.dialog_text = "¿Estás seguro de que quieres terminar tu día? Recuperarás tu energía, pero cualquier evento o llamado pendiente se perderá."
 		popup_confirmar_dia.confirmed.connect(_procesar_fin_dia)
 		add_child(popup_confirmar_dia)
+	popup_confirmar_dia.dialog_text = "¿Seguro que quieres terminar tu día?" + _resumen_tareas_pendientes()
 	popup_confirmar_dia.popup_centered()
 
 func _on_boton_dormir_pressed():
 	_mostrar_confirmacion_fin_dia()
+
+func _resumen_tareas_pendientes() -> String:
+	var faltan = []
+	if not ha_trabajado_hoy and Datos.stats_actor.get("energia_actual", 0) >= 2:
+		faltan.append("• Aún puedes trabajar de mesero.")
+	if reels_publicados_hoy < _max_reels_por_dia() and Datos.stats_actor.get("energia_actual", 0) >= 1:
+		faltan.append("• Te quedan reels por publicar hoy (" + str(reels_publicados_hoy) + "/" + str(_max_reels_por_dia()) + ").")
+	if not ha_ido_mixer_hoy and Datos.stats_actor.get("energia_actual", 0) >= 2 and Datos.economia.get("dinero", 0) >= 20:
+		faltan.append("• Puedes ir al Mixer para conseguir contactos.")
+	for id_p in Datos.proyectos_activos.keys():
+		if id_p == "temp":
+			continue
+		var p = Datos.proyectos_activos[id_p]
+		if str(p.get("tipo_pago", "")) == "taquilla" and int(p.get("hype_generado", 0)) < 80:
+			faltan.append("• Tu proyecto '" + str(p.get("titulo_unico", "Proyecto")).split("\n")[-1] + "' tiene hype bajo.")
+			break
+	if faltan.is_empty():
+		return "\n\n✅ Todo en orden por hoy."
+	return "\n\nAntes de dormir:\n" + "\n".join(faltan)
 
 func _bonos_sinergia_espacio(c: Dictionary, aforo_maximo: int) -> Dictionary:
 	var out = {"xp_mult": 1.0, "seg_mult": 1.0, "ticket_mult": 1.0, "aforo_mult": 1.0, "hype_extra": 0}
@@ -1479,7 +1562,7 @@ func _procesar_fin_dia():
 	Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] - 10, 0, 100)
 	if bool(Datos.mejoras_simzon.get("suscripcion_meditacion", false)):
 		Datos.stats_actor["estres"] = clamp(Datos.stats_actor["estres"] - 5, 0, 100)
-	ha_trabajado_hoy = false; ha_publicado_hoy = false; ha_ido_mixer_hoy = false
+	ha_trabajado_hoy = false; ha_publicado_hoy = false; reels_publicados_hoy = 0; ha_ido_mixer_hoy = false
 	cafes_tomados_hoy = 0 # El sueño resetea tu tolerancia a la cafeína
 	Datos.estado_actual = "normal"
 	Datos.tiempo["dia"] += 1
@@ -1642,29 +1725,21 @@ func _on_btn_cerrar_celular_pressed(): panel_simphone.visible = false
 func _on_btn_app_agenda_pressed():
 	contenedor_menu_inicio.visible = false
 	panel_app_agenda.visible = true
-	for hijo in grid_calendario.get_children(): hijo.queue_free()
-	var dia_actual = Datos.tiempo["dia"]
-	var cal_ref = _calendario_desde_dia_abs(dia_actual)
-	var dia_inicio = dia_actual - int(cal_ref["dia_mes"]) + 1
-	var dias_mes_actual = _dias_en_mes(int(cal_ref["anio"]), int(cal_ref["mes_idx"]))
-	for i in range(dia_inicio, dia_inicio + dias_mes_actual):
-		var btn_dia = Button.new()
-		var cal = _calendario_desde_dia_abs(i)
-		btn_dia.text = str(cal["nombre_dia"]).substr(0, 3) + "\n" + str(cal["dia_mes"])
-		btn_dia.custom_minimum_size = Vector2(45, 45)
-		if i < dia_actual: btn_dia.modulate = Color(0.4, 0.4, 0.4)
-		elif i == dia_actual: btn_dia.modulate = Color(1.0, 0.9, 0.2)
-		elif Datos.agenda.has(i):
-			var evento = str(Datos.agenda[i])
-			if evento == "Pago_Renta":
-				btn_dia.text += "\nR$"
-				btn_dia.modulate = Color(1.0, 0.45, 0.45)
-			else:
-				btn_dia.text += "\n!"
-				btn_dia.modulate = Color(0.2, 0.8, 0.2)
-		else: btn_dia.modulate = Color(1, 1, 1)
-		btn_dia.pressed.connect(_mostrar_detalle_calendario.bind(i))
-		grid_calendario.add_child(btn_dia)
+	agenda_offset_mes = 0
+	_render_agenda_mes(agenda_offset_mes)
+	if not panel_app_agenda.has_node("NavAgenda"):
+		var nav = HBoxContainer.new()
+		nav.name = "NavAgenda"
+		panel_app_agenda.add_child(nav)
+		var btn_prev = Button.new(); btn_prev.text = "◀ Mes"
+		btn_prev.pressed.connect(func(): agenda_offset_mes -= 1; _render_agenda_mes(agenda_offset_mes))
+		nav.add_child(btn_prev)
+		var btn_hoy = Button.new(); btn_hoy.text = "Hoy"
+		btn_hoy.pressed.connect(func(): agenda_offset_mes = 0; _render_agenda_mes(agenda_offset_mes))
+		nav.add_child(btn_hoy)
+		var btn_next = Button.new(); btn_next.text = "Mes ▶"
+		btn_next.pressed.connect(func(): agenda_offset_mes += 1; _render_agenda_mes(agenda_offset_mes))
+		nav.add_child(btn_next)
 
 func _mostrar_detalle_calendario(dia_abs: int):
 	if not Datos.agenda.has(dia_abs):
@@ -1678,7 +1753,8 @@ func _mostrar_detalle_calendario(dia_abs: int):
 		var renta_espacio = int(Datos.espacios_disponibles[espacio_id].get("renta_mensual", 0))
 		if _espacio_es_propietario(espacio_id):
 			renta_espacio = 0
-		var monto = 300 + renta_espacio
+		var renta_base_depa = 240 + (max(0, Datos.habilidades_actor["nivel_general"] - 1) * 6)
+		var monto = renta_base_depa + renta_espacio
 		mostrar_alerta("🧾 Detalle de Agenda", fecha + "\nEvento: Pago de Renta\nMonto a debitar: -$" + str(monto))
 		return
 	var tipo = "Evento"
@@ -2097,6 +2173,7 @@ func abrir_confirmacion_casting(index):
 		return
 
 	Datos.proyectos_activos["temp"] = c
+	Datos.proyectos_activos["temp"]["negociaciones_usadas"] = 0
 	panel_confirmacion.visible = true
 
 	# Reiniciamos la negociación y dibujamos el calendario
@@ -2128,8 +2205,10 @@ func sumar_seguidores(cantidad):
 		Datos.ultimos_seguidores = Datos.ultimos_seguidores.slice(0, 10)
 
 func reducir_seguidores(cantidad):
-	Datos.stats_actor["seguidores"] -= cantidad
-	if Datos.stats_actor["seguidores"] < 0: Datos.stats_actor["seguidores"] = 0
+	var actual = int(Datos.stats_actor.get("seguidores", 1))
+	var tope_perdida = max(1, int(floor(float(actual) * 0.35)))
+	var perdida = clamp(int(cantidad), 0, tope_perdida)
+	Datos.stats_actor["seguidores"] = max(1, actual - perdida)
 
 func comprobar_hitos_redes():
 	if Datos.stats_actor["seguidores"] >= 100 and not Datos.hitos_redes["micro_influencer"]:
@@ -2165,7 +2244,9 @@ func _on_btn_ver_seguidores_pressed():
 func _on_btn_cerrar_seguidores_pressed(): panel_lista_seguidores.visible = false
 
 func _on_btn_publicar_post_pressed():
-	if ha_publicado_hoy: return
+	if reels_publicados_hoy >= _max_reels_por_dia():
+		mostrar_alerta("Límite diario", "Ya publicaste todos los reels de hoy (" + str(reels_publicados_hoy) + "/" + str(_max_reels_por_dia()) + ").")
+		return
 	if Datos.stats_actor["energia_actual"] >= 1:
 		# Abrimos el panel de selección en lugar de gastar energía de inmediato
 		panel_seleccion_reel.visible = true
@@ -3098,13 +3179,24 @@ func _accion_espacio(id_espacio: String, accion: String):
 		else:
 			mostrar_alerta("❌ Fondos Insuficientes", "Necesitas $" + str(costo_compra) + " para comprar.")
 	else:
-		if Datos.economia["dinero"] >= costo_renta:
-			Datos.economia["dinero"] -= costo_renta
+		var contrato_prev = _estado_contrato_renta()
+		var saldo_mes_pasado = 0
+		if str(contrato_prev.get("id_espacio", "sala_casa")) != "sala_casa" and str(contrato_prev.get("id_espacio", "")) != id_espacio:
+			var id_prev = str(contrato_prev.get("id_espacio", "sala_casa"))
+			var esp_prev = Datos.espacios_disponibles.get(id_prev, {})
+			saldo_mes_pasado = int(esp_prev.get("renta_mensual", 0))
+		var total_mudanza = costo_renta + saldo_mes_pasado
+		if Datos.economia["dinero"] >= total_mudanza:
+			Datos.economia["dinero"] -= total_mudanza
 			Datos.mi_compania["id_espacio_actual"] = id_espacio
 			Datos.mi_compania["contrato_renta"] = {"id_espacio": id_espacio, "vence_dia": Datos.tiempo["dia"] + 30}
-			mostrar_alerta("📦 Mudanza Exitosa", "Has rentado: " + espacio["nombre"] + "\nPagaste -$" + str(costo_renta) + " por depósito + primer mes.\nContrato vigente por 30 días.")
+			var txt_mud = "Has rentado: " + espacio["nombre"] + "\nPagaste -$" + str(costo_renta) + " por depósito + primer mes."
+			if saldo_mes_pasado > 0:
+				txt_mud += "\nLiquidaste renta del local anterior: -$" + str(saldo_mes_pasado)
+			txt_mud += "\nContrato vigente por 30 días."
+			mostrar_alerta("📦 Mudanza Exitosa", txt_mud)
 		else:
-			mostrar_alerta("❌ Fondos Insuficientes", "Necesitas $" + str(costo_renta) + " para rentar.")
+			mostrar_alerta("❌ Fondos Insuficientes", "Necesitas $" + str(total_mudanza) + " para mudarte y liquidar el mes anterior.")
 	actualizar_interfaz()
 	actualizar_lista_espacios()
 
@@ -3329,22 +3421,42 @@ func _on_btn_tec_nada_pressed():
 # ==========================================
 # 📅 SISTEMA DE NEGOCIACIÓN DE FECHAS
 # ==========================================
+func _datos_negociacion(c: Dictionary) -> Dictionary:
+	var tier = int(c.get("importancia", 1))
+	var nivel_pj = int(Datos.habilidades_actor.get("nivel_general", 1))
+	var car = int(Datos.habilidades_actor.get("carisma", 1))
+	var mem = int(Datos.habilidades_actor.get("memoria", 1))
+	var base = 18 + (tier * 10) + int(c.get("nivel_minimo", 1)) * 3 + int(c.get("dias_de_trabajo", 1)) * 2
+	var descuento_stats = clamp((car * 0.05) + (mem * 0.02) + _valor_bonus_contactos("negociacion_desc"), 0.0, 0.65)
+	var costo = int(round(base * (1.0 - descuento_stats)))
+	var estres = max(1, int(round((2 + tier) * (1.0 - clamp(car * 0.06, 0.0, 0.5)))))
+	var max_intentos = clamp(1 + int(car / 4) + int(nivel_pj / 6), 1, 4)
+	var paso_dias = 1
+	if car >= 6 and mem >= 4:
+		paso_dias = 2
+	return {"costo": costo, "estres": estres, "max_intentos": max_intentos, "paso_dias": paso_dias}
+
 func _on_btn_negociar_fechas_pressed():
 	if not Datos.proyectos_activos.has("temp"):
 		return
 	var c = Datos.proyectos_activos["temp"]
-	var tier = int(c.get("importancia", 1))
-	var base = 20 + (tier * 12) + int(c.get("nivel_minimo", 1)) * 4
-	var descuento = clamp(_valor_bonus_contactos("negociacion_desc"), 0.0, 0.6)
-	var costo = int(round(base * (1.0 - descuento)))
+	var usados = int(c.get("negociaciones_usadas", 0))
+	var d = _datos_negociacion(c)
+	if usados >= int(d.get("max_intentos", 1)):
+		mostrar_alerta("Límite alcanzado", "Ya intentaste negociar lo máximo posible para este proyecto.")
+		return
+	var costo = int(d.get("costo", 0))
 	if Datos.economia["dinero"] < costo:
 		mostrar_alerta("Sin fondos", "Negociar fechas cuesta $" + str(costo) + " y no te alcanza.")
 		return
 	Datos.economia["dinero"] -= costo
-	Datos.stats_actor["estres"] = clamp(Datos.stats_actor.get("estres", 0) + 4 + tier, 0, 100)
-	desplazamiento_fechas += 1 # Empujamos el proyecto un día más
+	var estres = int(d.get("estres", 2))
+	Datos.stats_actor["estres"] = clamp(Datos.stats_actor.get("estres", 0) + estres, 0, 100)
+	desplazamiento_fechas += int(d.get("paso_dias", 1))
+	c["negociaciones_usadas"] = usados + 1
+	Datos.proyectos_activos["temp"] = c
 	actualizar_calendario_negociacion()
-	mostrar_alerta("📅 Fecha renegociada", "Pagaste $" + str(costo) + " en gestión de agenda y subió +" + str(4 + tier) + " tu estrés.")
+	mostrar_alerta("📅 Fecha renegociada", "Pagaste $" + str(costo) + " y subió +" + str(estres) + " estrés.\nIntentos: " + str(c["negociaciones_usadas"]) + "/" + str(d.get("max_intentos", 1)))
 
 func actualizar_calendario_negociacion():
 	var c = Datos.proyectos_activos["temp"]
@@ -3352,16 +3464,14 @@ func actualizar_calendario_negociacion():
 	var dia_arranque_propuesto = dia_actual + 1 + desplazamiento_fechas
 
 	# --- REQUISITO DE "ESTRELLA" PARA NEGOCIAR ---
-	if Datos.habilidades_actor["carisma"] < 3:
-		btn_negociar_fechas.text = "🔒 Negociar (Pide Nvl. 3 Carisma)"
+	if Datos.habilidades_actor["carisma"] < 2:
+		btn_negociar_fechas.text = "🔒 Negociar (Pide Nvl. 2 Carisma)"
 		btn_negociar_fechas.disabled = true
 	else:
-		var tier = int(c.get("importancia", 1))
-		var base = 20 + (tier * 12) + int(c.get("nivel_minimo", 1)) * 4
-		var descuento = clamp(_valor_bonus_contactos("negociacion_desc"), 0.0, 0.6)
-		var costo_negociar = int(round(base * (1.0 - descuento)))
-		btn_negociar_fechas.text = "📅 Negociar Fechas (+1 Día) -$" + str(costo_negociar)
-		btn_negociar_fechas.disabled = Datos.economia["dinero"] < costo_negociar
+		var d = _datos_negociacion(c)
+		var usados = int(c.get("negociaciones_usadas", 0))
+		btn_negociar_fechas.text = "📅 Negociar (+" + str(d.get("paso_dias", 1)) + " Día) -$" + str(d.get("costo", 0)) + " | Intentos " + str(usados) + "/" + str(d.get("max_intentos", 1))
+		btn_negociar_fechas.disabled = Datos.economia["dinero"] < int(d.get("costo", 0)) or usados >= int(d.get("max_intentos", 1))
 
 	# 1. Calculamos las fechas que tomará este proyecto
 	dias_propuestos_temp.clear()
@@ -3424,7 +3534,8 @@ func publicar_reel_seleccionado(id_eleccion):
 
 	# Ahora sí, cobramos la energía
 	Datos.stats_actor["energia_actual"] -= 1
-	ha_publicado_hoy = true
+	reels_publicados_hoy += 1
+	ha_publicado_hoy = reels_publicados_hoy >= _max_reels_por_dia()
 
 	if id_eleccion == "personal":
 		# LÓGICA REEL NORMAL
@@ -3758,6 +3869,30 @@ func _cumple_requisito_fusion(ing1: String, ing2: String, req: Dictionary) -> bo
 		for id_i in Datos.obtener_instancias_por_base(ing2, false): best2 = max(best2, Datos.obtener_nivel_carta(id_i))
 	return best1 >= min_nivel and best2 >= min_nivel and (best1 + best2) >= suma_min
 
+func _progreso_requisito_fusion(ing1: String, ing2: String, req: Dictionary) -> Dictionary:
+	var min_nivel = int(req.get("min_nivel", 1))
+	var suma_min = int(req.get("suma", 2))
+	var best1 = 0
+	var best2 = 0
+	if ing1 == ing2:
+		var niveles = []
+		for id_i in Datos.obtener_instancias_por_base(ing1, false):
+			niveles.append(Datos.obtener_nivel_carta(id_i))
+		niveles.sort()
+		if niveles.size() >= 2:
+			best1 = int(niveles[niveles.size() - 1])
+			best2 = int(niveles[niveles.size() - 2])
+	else:
+		for id_i in Datos.obtener_instancias_por_base(ing1, false): best1 = max(best1, Datos.obtener_nivel_carta(id_i))
+		for id_i in Datos.obtener_instancias_por_base(ing2, false): best2 = max(best2, Datos.obtener_nivel_carta(id_i))
+	return {
+		"best1": best1,
+		"best2": best2,
+		"min_nivel": min_nivel,
+		"suma": best1 + best2,
+		"suma_min": suma_min
+	}
+
 
 
 
@@ -3798,8 +3933,10 @@ func _on_btn_fusionar_cartas_pressed():
 			var n2 = Datos.catalogo_cartas[ing2]["nombre"]
 			var req = _requisito_fusion(rareza)
 			var max_ok = _cumple_requisito_fusion(ing1, ing2, req)
+			var prog = _progreso_requisito_fusion(ing1, ing2, req)
 
 			btn_receta.text = "Crear: " + info_resultado["nombre"] + " (" + rareza + ")\n" + n1 + " + " + n2 + "\nHonorarios: $" + str(costo)
+			btn_receta.text += "\nProgreso: [" + n1 + " " + str(prog.get("best1", 0)) + "/" + str(prog.get("min_nivel", 1)) + "] + [" + n2 + " " + str(prog.get("best2", 0)) + "/" + str(prog.get("min_nivel", 1)) + "] | Suma " + str(prog.get("suma", 0)) + "/" + str(prog.get("suma_min", 2))
 			if not max_ok:
 				btn_receta.text += "\n🔒 Requisito: " + str(req.get("desc", "progreso insuficiente"))
 				btn_receta.disabled = true
